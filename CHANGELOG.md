@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fixed a hang when the global configuration path is a FIFO or another
+  nonregular file. MTK now rejects it before starting the wrapped command,
+  preserving bounded execution.
+
 ## 0.2.1 — 2026-10-04
 
 - Load global display defaults from `~/.config/mtk/config.json`, respecting

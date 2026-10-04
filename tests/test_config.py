@@ -77,6 +77,15 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result.stdout, b'')
         self.assertIn(b'config', result.stderr)
 
+    def test_fifo_config_fails_without_blocking_before_governor(self):
+        os.mkfifo(self.config)
+        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+                                 'must-not-run'], env=self.env,
+                                capture_output=True, timeout=3)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b'config', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -9,6 +9,7 @@ import os
 import pty
 import selectors
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -30,7 +31,10 @@ def defaults():
     directory = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     path = Path(directory) / "mtk/config.json"
     try:
-        with path.open() as file:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        with os.fdopen(fd) as file:
+            if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+                raise ValueError("expected a regular JSON file")
             contents = file.read(65537)
         if len(contents) > 65536:
             raise ValueError("file exceeds 64 Ki characters")
