@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""Fail-closed entry points for media generation until endpoints are verified."""
+
+import sys
+
+
+CAPABILITIES = {
+    "generate-image": "image-generation",
+    "generate-audio": "audio-generation",
+    "generate-video": "video-generation",
+}
+
+
+def main():
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    capability = CAPABILITIES.get(command)
+    if capability is None:
+        print("usage: mtk generate-{image,audio,video} [options]", file=sys.stderr)
+        raise SystemExit(2)
+    if "--help" in sys.argv[2:] or "-h" in sys.argv[2:]:
+        print(f"usage: mtk {command} [options]")
+        print(f"unsupported: no verified {capability} endpoint configured")
+        return
+    print(f"mtk {command}: unsupported: no verified {capability} endpoint configured", file=sys.stderr)
+    raise SystemExit(69)
+
+
+if __name__ == "__main__":
+    main()

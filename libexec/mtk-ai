@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Single-request, text-only OpenAI-compatible model router."""
+
+import argparse
+import json
+import math
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+
+BUDGET_USD = 1.0
+INPUT_SAFETY_TOKENS = 2048
+MAX_REQUESTS = 1
+FREE_MODELS = {"nvidia": {"openai/gpt-oss-20b"}}
+ENDPOINTS = {
+    "openrouter": "https://openrouter.ai/api/v1/chat/completions",
+    "nvidia": "https://integrate.api.nvidia.com/v1/chat/completions",
+}
+
+
+def fail(message, code=2):
+    print(f"mtk ai: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Send one text request under a $1 run cap.")
+    parser.add_argument("--provider", choices=("azure", "openrouter", "nvidia"), required=True)
+    parser.add_argument("--model", required=True, help="Provider model ID; Azure uses deployment name.")
+    parser.add_argument("--prompt", required=True)
+    parser.add_argument("--max-output-tokens", type=int, default=1024)
+    parser.add_argument("--budget-usd", type=float, default=BUDGET_USD)
+    parser.add_argument("--timeout-seconds", type=int, default=120)
+    parser.add_argument("--dry-run", action="store_true", help="show capped request plan without network access")
+    parser.add_argument("--env-file", help="read exact NAME=VALUE credentials without executing the file")
+    return parser.parse_args()
+
+
+def read_config():
+    path = os.environ.get("MTK_AI_CONFIG", os.path.expanduser("~/.config/mtk/router.json"))
+    try:
+        with open(path, encoding="utf-8") as config_file:
+            config = json.load(config_file)
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError):
+        fail("router config unreadable or invalid JSON")
+    if not isinstance(config, dict):
+        fail("router config must be a JSON object")
+    return config
+
+
+def resolve_model_price(config, provider, model):
+    if model in FREE_MODELS.get(provider, set()):
+        return 0.0, 0.0
+    prices = config.get("prices", {})
+    price = prices.get(f"{provider}/{model}") if isinstance(prices, dict) else None
+    if not isinstance(price, dict):
+        fail("unknown model price; add an exact model entry to router config")
+    try:
+        input_rate = float(price["input_usd_per_million_tokens"])
+        output_rate = float(price["output_usd_per_million_tokens"])
+    except (KeyError, TypeError, ValueError):
+        fail("model price entry needs numeric input and output rates")
+    if not all(math.isfinite(rate) and rate >= 0 for rate in (input_rate, output_rate)):
+        fail("model price rates must be finite and non-negative")
+    if output_rate == 0:
+        fail("zero output price unsupported unless model is a verified free route")
+    return input_rate, output_rate
+
+
+def get_endpoint(config, provider):
+    if provider != "azure":
+        return ENDPOINTS[provider]
+    endpoint = os.environ.get("MTK_AZURE_ENDPOINT")
+    if not endpoint:
+        azure = config.get("azure", {})
+        endpoint = azure.get("endpoint") if isinstance(azure, dict) else None
+    if not isinstance(endpoint, str) or not endpoint.startswith("https://") or "?" in endpoint:
+        fail("Azure needs an HTTPS endpoint in MTK_AZURE_ENDPOINT or router config")
+    return endpoint.rstrip("/") + "/openai/v1/chat/completions"
+
+
+def read_env_value(path, allowed_names):
+    try:
+        file_stat = os.stat(path)
+        if not stat.S_ISREG(file_stat.st_mode):
+            fail("credential env file must be a regular file", 77)
+        if file_stat.st_uid != os.getuid() or stat.S_IMODE(file_stat.st_mode) & 0o077:
+            fail("credential env file must be owned by the current user and owner-only", 77)
+        with open(path, encoding="utf-8") as env_file:
+            matches = {}
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, value = line.split("=", 1)
+                name, value = name.strip(), value.strip()
+                if name not in allowed_names:
+                    continue
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                    value = value[1:-1]
+                if name in matches:
+                    fail("duplicate credential name in env file", 77)
+                matches[name] = value
+    except SystemExit:
+        raise
+    except (OSError, UnicodeError):
+        fail("credential env file unreadable", 77)
+    for name in allowed_names:
+        if matches.get(name):
+            return matches[name]
+    return None
+
+
+def get_auth(provider, env_file=None):
+    if provider == "azure":
+        az = shutil.which("az")
+        if not az:
+            fail("Azure route needs Azure CLI (`az`) or use another configured provider", 127)
+        try:
+            token = subprocess.run(
+                [az, "account", "get-access-token", "--scope",
+                 "https://cognitiveservices.azure.com/.default", "--query", "accessToken", "-o", "tsv"],
+                check=True, capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+            fail("Azure token unavailable; sign in with Azure CLI first", 77)
+        if not token:
+            fail("Azure token unavailable; sign in with Azure CLI first", 77)
+        return {"Authorization": f"Bearer {token}"}
+
+    env_name = "OPENROUTER_API_KEY" if provider == "openrouter" else "NVIDIA_API_KEY"
+    env_names = [f"MTK_{env_name}", f"{env_name}_1", env_name]
+    token = next((os.environ[name] for name in env_names if os.environ.get(name)), None)
+    if not token and env_file:
+        token = read_env_value(env_file, env_names[1:])
+    if not token:
+        key_hint = f"{env_name}_1 or {env_name}" if provider == "nvidia" else env_name
+        fail(f"{provider} API key missing from {key_hint}", 77)
+    return {"Authorization": f"Bearer {token}"}
+
+
+def main():
+    args = parse_args()
+    if not 0 < args.budget_usd <= BUDGET_USD:
+        fail("budget must be greater than $0 and no more than $1")
+    if not 1 <= args.max_output_tokens <= 8192:
+        fail("max output tokens must be between 1 and 8192")
+    if not 1 <= args.timeout_seconds <= 300:
+        fail("timeout must be between 1 and 300 seconds")
+
+    config = read_config()
+    input_rate, output_rate = resolve_model_price(config, args.provider, args.model)
+    endpoint = get_endpoint(config, args.provider)
+
+    request_body = {
+        "model": args.model,
+        "messages": [{"role": "user", "content": args.prompt}],
+        "max_tokens": args.max_output_tokens,
+        "stream": False,
+    }
+    input_upper_bound = len(args.prompt.encode("utf-8")) + 32 + INPUT_SAFETY_TOKENS
+    input_reserve = input_upper_bound * input_rate / 1_000_000
+    remaining = args.budget_usd - input_reserve
+    output_limit = args.max_output_tokens if output_rate == 0 else min(
+        args.max_output_tokens, int(remaining * 1_000_000 / output_rate)
+    )
+    if output_limit < 1:
+        fail("input reserve leaves no budget for one output token")
+    request_body["max_tokens"] = output_limit
+    if MAX_REQUESTS != 1:
+        fail("router request limit misconfigured")
+
+    if args.dry_run:
+        print(json.dumps({
+            "provider": args.provider,
+            "model": args.model,
+            "requests": MAX_REQUESTS,
+            "budget_usd": args.budget_usd,
+            "input_reserve_usd": round(input_reserve, 6),
+            "max_output_tokens": output_limit,
+            "timeout_seconds": args.timeout_seconds,
+        }, sort_keys=True))
+        return
+
+    headers = get_auth(args.provider, args.env_file)
+    headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(request_body).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=args.timeout_seconds) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as error:
+        fail(f"provider returned HTTP {error.code}", 69)
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, TimeoutError):
+            fail("provider request timed out", 69)
+        fail("provider connection failed", 69)
+    except TimeoutError:
+        fail("provider request timed out", 69)
+    except json.JSONDecodeError:
+        fail("provider returned invalid JSON", 69)
+    except OSError:
+        fail("provider request failed", 69)
+
+    try:
+        usage = result["usage"]
+        input_tokens = int(usage["prompt_tokens"])
+        output_tokens = int(usage["completion_tokens"])
+        content = result["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError, ValueError):
+        fail("provider response missing text or token usage", 65)
+    if not isinstance(content, str):
+        fail("provider returned non-text content; text route only", 65)
+
+    cost = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+    if cost > args.budget_usd:
+        fail("reported cost exceeded configured cap; check model pricing", 65)
+    print(content)
+    print(f"usage: {input_tokens} input + {output_tokens} output tokens; cost ${cost:.6f}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

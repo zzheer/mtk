@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve symlinks to find installation directory
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+BIN_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+PREFIX="$(cd -P "$BIN_DIR/.." && pwd)"
+
+LIBEXEC_DIR="$PREFIX/libexec"
+SHARE_DIR="$PREFIX/share/mtk"
+
+# Fallback paths if libexec is in scripts/ (e.g. legacy development layout)
+if [[ ! -d "$LIBEXEC_DIR" ]] && [[ -d "$PREFIX/scripts" ]]; then
+  LIBEXEC_DIR="$PREFIX/scripts"
+fi
+
+# Detect best available python interpreter
+PYTHON_BIN=""
+if command -v python3.12 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3.12)"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+fi
+
+# Subcommand: mtk env / mtk init
+if [[ "${1:-}" == "env" || "${1:-}" == "init" ]]; then
+  if [[ -f "$SHARE_DIR/mtk-aliases.sh" ]]; then
+    cat "$SHARE_DIR/mtk-aliases.sh"
+    exit 0
+  else
+    cat <<'EOF'
+alias mr='mtk run'
+alias mpf='mtk proxy fd'
+alias mrg='mtk rg'
+alias md='mtk docker'
+alias mpj='mtk proxy just'
+alias mpnpm='mtk pnpm'
+alias mgh='mtk gh'
+alias mgit='mtk git'
+alias mp='mtk proxy'
+alias mb='mtk bun'
+alias mpn='mtk proxy node'
+alias mpd='mtk pnpm dlx'
+alias mpe='mtk pnpm exec'
+alias mnpm='mtk npm'
+alias mnpx='mtk npx'
+alias mssh='mtk proxy ssh'
+mpp() { mtk proxy python3 "$@"; }
+EOF
+    exit 0
+  fi
+fi
+
+# Subcommand: mtk doctor
+if [[ "${1:-}" == "doctor" ]]; then
+  echo "Checking mtk dependencies:"
+  for dep in rtk python3 node pnpm bun rg fd gh just ast-grep uv; do
+    if command -v "$dep" >/dev/null 2>&1; then
+      path="$(command -v "$dep")"
+      echo "  [✓] $dep ($path)"
+    else
+      echo "  [✗] $dep (not found in PATH)"
+    fi
+  done
+  exit 0
+fi
+
+# Subcommand: mtk ai
+if [[ "${1:-}" == "ai" ]]; then
+  shift
+  if [[ -z "$PYTHON_BIN" ]]; then
+    echo "mtk ai: python3 is required but not found in PATH" >&2
+    exit 127
+  fi
+  exec "$PYTHON_BIN" "$LIBEXEC_DIR/mtk-ai" "$@"
+fi
+
+# Subcommands: media generators
+case "${1:-}" in
+  generate-image|generate-audio|generate-video)
+    MEDIA_CMD="$1"
+    shift
+    if [[ -z "$PYTHON_BIN" ]]; then
+      echo "mtk $MEDIA_CMD: python3 is required but not found in PATH" >&2
+      exit 127
+    fi
+    exec "$PYTHON_BIN" "$LIBEXEC_DIR/mtk-media" "$MEDIA_CMD" "$@"
+    ;;
+esac
+
+# Core command execution via rtk
+if [[ -f "$LIBEXEC_DIR/mtk-core.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$LIBEXEC_DIR/mtk-core.sh"
+  mtk_core_run "$@"
+else
+  if ! command -v rtk >/dev/null 2>&1; then
+    echo "mtk: required dependency 'rtk' not found in PATH" >&2
+    exit 127
+  fi
+  exec rtk "$@"
+fi
