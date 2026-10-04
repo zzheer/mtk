@@ -108,7 +108,9 @@ Set global display defaults in `~/.config/mtk/config.json`, or
 `max_lines` is a positive integer; `max_bytes` is a positive byte count or size
 string; `truncate` is a JSON boolean. Missing file or omitted keys retain
 defaults of 200 lines, 32 KiB, and truncation enabled. Invalid config exits
-nonzero before command execution. CLI flags `--max-lines`, `--max-bytes`, and
+nonzero before command execution. Config must be a regular JSON file: FIFOs,
+devices, and other nonregular files are rejected before command execution;
+symlinks to regular files are allowed. CLI flags `--max-lines`, `--max-bytes`, and
 `--no-truncate` override config values. CPU, memory, and runtime limits remain
 separate CLI flags.
 

@@ -5,6 +5,8 @@
 - Fixed a hang when the global configuration path is a FIFO or another
   nonregular file. MTK now rejects it before starting the wrapped command,
   preserving bounded execution.
+- Clarified accepted configuration file types in the MTK guide and global
+  agent instructions, including support for symlinks to regular JSON files.
 
 ## 0.2.1 — 2026-10-04
 
