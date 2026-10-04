@@ -15,5 +15,17 @@ mtk_core_run() {
     return 127
   fi
 
-  command rtk "$@"
+  local has_help=0
+  for arg in "$@"; do
+    if [[ "$arg" == "--help" || "$arg" == "-h" || "$arg" == "help" ]]; then
+      has_help=1
+      break
+    fi
+  done
+
+  if [[ $has_help -eq 1 ]]; then
+    command rtk "$@" | sed -e 's/rtk/mtk/g' -e 's/RTK/MTK/g'
+  else
+    command rtk "$@"
+  fi
 }

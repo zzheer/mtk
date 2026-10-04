@@ -89,6 +89,8 @@ class Mtk < Formula
 
   test do
     assert_match "Checking mtk dependencies", shell_output("#{bin}/mtk doctor 2>&1", 0)
+    assert_match "Usage: mtk", shell_output("#{bin}/mtk --help 2>&1", 0)
+    refute_match "Usage: rtk", shell_output("#{bin}/mtk --help 2>&1")
     assert_match "usage: mtk generate-", shell_output("#{bin}/mtk generate-image --help 2>&1", 0)
     assert_match "rtk", shell_output("#{bin}/mtk --version 2>&1", 0)
   end

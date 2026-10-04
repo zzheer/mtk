@@ -109,7 +109,7 @@ case "${1:-}" in
     ;;
 esac
 
-# Core command execution via rtk
+# Core command execution via rtk (with help filter for rtk -> mtk)
 if [[ -f "$LIBEXEC_DIR/mtk-core.sh" ]]; then
   # shellcheck source=/dev/null
   source "$LIBEXEC_DIR/mtk-core.sh"
@@ -119,5 +119,18 @@ else
     echo "mtk: required dependency 'rtk' not found in PATH" >&2
     exit 127
   fi
-  exec rtk "$@"
+
+  has_help=0
+  for arg in "$@"; do
+    if [[ "$arg" == "--help" || "$arg" == "-h" || "$arg" == "help" ]]; then
+      has_help=1
+      break
+    fi
+  done
+
+  if [[ $has_help -eq 1 ]]; then
+    command rtk "$@" | sed -e 's/rtk/mtk/g' -e 's/RTK/MTK/g'
+  else
+    exec rtk "$@"
+  fi
 fi
