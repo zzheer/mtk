@@ -29,6 +29,7 @@ cp -R "$REPO_ROOT/bin" "$TARGET_DIR/"
 cp -R "$REPO_ROOT/libexec" "$TARGET_DIR/"
 cp -R "$REPO_ROOT/share" "$TARGET_DIR/"
 cp "$REPO_ROOT/mtk.md" "$TARGET_DIR/"
+[[ -f "$REPO_ROOT/justfile" ]] && cp "$REPO_ROOT/justfile" "$TARGET_DIR/"
 [[ -f "$REPO_ROOT/README.md" ]] && cp "$REPO_ROOT/README.md" "$TARGET_DIR/"
 [[ -f "$REPO_ROOT/LICENSE" ]] && cp "$REPO_ROOT/LICENSE" "$TARGET_DIR/"
 
@@ -73,8 +74,8 @@ class Mtk < Formula
     # Rewrite python hashbangs to brewed python
     rewrite_shebang detected_python_shebang, libexec/"mtk-ai", libexec/"mtk-media"
 
-    # Install alias files into share/mtk
-    pkgshare.install "share/mtk/mtk-aliases.sh"
+    # Install alias and justfile template into share/mtk
+    pkgshare.install "share/mtk/mtk-aliases.sh", "share/mtk/justfile"
   end
 
   def caveats

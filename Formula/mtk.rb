@@ -4,7 +4,7 @@ class Mtk < Formula
   desc "Optimized CLI proxy and AI developer toolkit wrapping rtk"
   homepage "https://github.com/zzheer/mtk"
   url "https://github.com/zzheer/mtk/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "596c554c49a79206829c232912416d295eb340ddc754082699d4fa7d82f17c89"
+  sha256 "49a072f85ca3d6d17cf6edd4704606a10de42e50043f4e530a9f8ddda12b5fd3"
   license "MIT"
 
   depends_on "ast-grep"
@@ -29,8 +29,8 @@ class Mtk < Formula
     # Rewrite python hashbangs to brewed python
     rewrite_shebang detected_python_shebang, libexec/"mtk-ai", libexec/"mtk-media"
 
-    # Install alias files into share/mtk
-    pkgshare.install "share/mtk/mtk-aliases.sh"
+    # Install alias and justfile template into share/mtk
+    pkgshare.install "share/mtk/mtk-aliases.sh", "share/mtk/justfile"
   end
 
   def caveats

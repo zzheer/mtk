@@ -56,6 +56,22 @@ EOF
   fi
 fi
 
+# Subcommand: mtk justfile / mtk init-justfile
+if [[ "${1:-}" == "justfile" || "${1:-}" == "init-justfile" ]]; then
+  if [[ -f "./justfile" ]]; then
+    echo "mtk: ./justfile already exists in current directory" >&2
+    exit 1
+  fi
+  if [[ -f "$SHARE_DIR/justfile" ]]; then
+    cp "$SHARE_DIR/justfile" ./justfile
+    echo "mtk: created ./justfile template in current directory"
+    exit 0
+  else
+    echo "mtk: template justfile not found in $SHARE_DIR" >&2
+    exit 1
+  fi
+fi
+
 # Subcommand: mtk doctor
 if [[ "${1:-}" == "doctor" ]]; then
   echo "Checking mtk dependencies:"

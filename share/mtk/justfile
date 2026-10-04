@@ -1,0 +1,38 @@
+# share/mtk/justfile - Standard mtk-optimized template justfile
+set shell := ["bash", "-cu"]
+
+# Show available recipes
+default:
+    @just --list
+
+# Check development dependencies
+doctor:
+    mtk doctor
+
+# Compact git status
+status:
+    mtk git status
+
+# Run dev server with mtk filtering
+dev:
+    mtk pnpm dev
+
+# Build with compact output
+build:
+    mtk pnpm build
+
+# Lint with rule/file grouping
+lint:
+    mtk lint
+
+# Typecheck with compact error reporting
+typecheck:
+    mtk tsc
+
+# Run test suite with failure filtering
+test:
+    mtk test
+
+# Token savings report
+gain:
+    mtk gain
