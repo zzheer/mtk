@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if command -v python3.12 >/dev/null 2>&1; then
+  python_bin="$(command -v python3.12)"
+else
+  python_bin="$(command -v python3)"
+fi
+
+exec "$python_bin" -c '
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+
+parser = argparse.ArgumentParser(usage="mtk search-web <query> [--limit N] [--json]")
+parser.add_argument("query", nargs="+")
+parser.add_argument("--limit", "-l", type=int, default=5)
+parser.add_argument("--json", action="store_true")
+if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
+    print("Usage: mtk search-web <query> [--limit N] [--json]")
+    print("Uses installed duckduckgo-tools; limits 1-50, default 5.")
+    sys.exit(0)
+args = parser.parse_args()
+if not 1 <= args.limit <= 50:
+    parser.error("--limit must be between 1 and 50")
+provider = shutil.which("duckduckgo-tools")
+if not provider:
+    print("mtk search-web: duckduckgo-tools unavailable; install: brew install zzheer/tap/duckduckgo-tools", file=sys.stderr)
+    sys.exit(127)
+query = " ".join(args.query)
+try:
+    result = subprocess.run([provider, "search", "--query", query, "--limit", str(args.limit), "--json"],
+                            capture_output=True, timeout=25)
+except (OSError, subprocess.TimeoutExpired) as exc:
+    print(f"mtk search-web: provider failed: {exc}", file=sys.stderr)
+    sys.exit(1)
+sys.stderr.buffer.write(result.stderr)
+if args.json or result.returncode:
+    sys.stdout.buffer.write(result.stdout)
+    sys.exit(result.returncode if result.returncode >= 0 else 128 - result.returncode)
+try:
+    data = json.loads(result.stdout)
+    results = data["results"]
+except (ValueError, KeyError, TypeError) as exc:
+    print(f"mtk search-web: invalid provider response: {exc}", file=sys.stderr)
+    sys.exit(1)
+if not results:
+    print(f"No results found for {query!r}.")
+else:
+    print(f"## Web Search Results for: {query}\n")
+    for item in results:
+        rank = item.get("rank", 1)
+        title = (item.get("title") or "").strip()
+        url = (item.get("url") or "").strip()
+        snippet = (item.get("snippet") or "").strip()
+        print(f"### {rank}. [{title}]({url})")
+        print(f"{snippet}\n" if snippet else "")
+' "$@"

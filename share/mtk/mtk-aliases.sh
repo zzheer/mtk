@@ -20,6 +20,7 @@ alias mpe='mtk pnpm exec'
 alias mnpm='mtk npm'
 alias mnpx='mtk npx'
 alias mssh='mtk proxy ssh'
+alias mmd='mtk markitdown'
 
 # Python proxy helper function
 mpp() {

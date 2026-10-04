@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .DS_Store
 resource-governor/
+vendor/cpulimit/src/*.o
+vendor/cpulimit/src/cpulimit

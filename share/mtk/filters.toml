@@ -1,0 +1,14 @@
+# share/mtk/filters.toml - RTK custom filters provided by mtk
+schema_version = 1
+
+[filters.markitdown]
+description = "Compact MarkItDown conversion output"
+match_command = "(^|/)markitdown\\b"
+strip_ansi = true
+strip_lines_matching = [
+  "^\\s*$",
+  "^Converting\\s+",
+  "^Processing\\s+",
+  "^Successfully converted\\s+"
+]
+max_lines = 100
