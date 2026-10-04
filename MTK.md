@@ -1,3 +1,17 @@
+# MTK agent guide
+
+Canonical public guide: <https://raw.githubusercontent.com/zzheer/mtk/preview/MTK.md>.
+
+Prefer Homebrew-installed `mtk`, resolved through PATH, for routine shell and
+terminal commands. Use `mtk proxy` when it preserves command behavior and useful
+diagnostics. Do not substitute a source-checkout wrapper. When unavailable or
+incompatible wrapping, filtered diagnostics, changed exit status, or wrapper
+limits block authorized work, run the underlying command directly. No additional
+permission is required solely to bypass MTK.
+
+Keep output concise and preserve complete diagnostics. Apply CPU, memory,
+concurrency, runtime, and storage limits separately from display filtering.
+
 ## Files
 
 mtk ls . # Compact directory tree
@@ -166,6 +180,27 @@ just audit # Audits Homebrew formula locally
 mtk --max-lines 500 --max-bytes 128KiB git diff
 mtk --no-truncate proxy python3 script.py
 ```
+
+Display settings load from `~/.config/mtk/config.json`. When `XDG_CONFIG_HOME` is
+set, MTK uses `$XDG_CONFIG_HOME/mtk/config.json` instead. Create the directory and
+JSON file to change defaults globally:
+
+```json
+{
+  "max_lines": 500,
+  "max_bytes": "128KiB",
+  "truncate": true
+}
+```
+
+`max_lines` accepts a positive integer. `max_bytes` accepts a positive integer
+number of bytes or a size string such as `"32KiB"` or `"128KiB"`. `truncate`
+accepts a JSON boolean; `false` disables display clipping. Keys are optional.
+A missing config file uses 200 lines, 32 KiB, and truncation enabled. Invalid
+JSON or invalid settings exit nonzero before the wrapped command starts.
+CLI flags override the corresponding config settings: `--max-lines`,
+`--max-bytes`, and `--no-truncate`. Flags must precede the command. Resource
+limits remain separate CLI flags; this config controls output display only.
 
 Defaults: 200 lines / 32 KiB per stream. Each MTK clipping region has exact
 `[truncated by mtk]`. Unique private `/tmp/mtk-*.log` contains complete wrapped

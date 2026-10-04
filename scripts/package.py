@@ -54,7 +54,7 @@ def main():
     else:
         paths = [path for group in manifest['install'].values() for path in group]
         paths += manifest['source_files']
-        paths += ['packaging/manifest.json', 'mtk.md', 'justfile', 'README.md', 'LICENSE']
+        paths += ['packaging/manifest.json', 'MTK.md', 'justfile', 'README.md', 'LICENSE']
         # Validate every installed helper before creating any partial package.
         for path in paths:
             if not (ROOT / path).is_file():
@@ -89,6 +89,7 @@ def main():
         parser.error('archive missing package file: ' + sorted(missing)[0])
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
     formula = render_formula((ROOT / 'Formula/mtk.rb').read_text(), manifest, url, checksum)
+    formula = re.sub(r'^  version .*$', '  version ' + json.dumps(version), formula, flags=re.M)
     (dist / 'mtk.rb').write_text(formula)
     print('Archive: ' + str(archive))
     print('SHA256: ' + checksum)

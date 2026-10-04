@@ -40,6 +40,12 @@ class Mtk < Formula
   end
 
   test do
+    ENV["XDG_CONFIG_HOME"] = (testpath/"config").to_s
+    (testpath/"config/mtk").mkpath
+    (testpath/"config/mtk/config.json").write('{"max_lines":1,"max_bytes":"32KiB","truncate":true}')
+    assert_match "[truncated by mtk]", shell_output("#{bin}/mtk proxy printf 'one\\ntwo\\n' 2>&1", 0)
+    refute_match "[truncated by mtk]", shell_output("#{bin}/mtk --max-lines 2 proxy printf 'one\\ntwo\\n' 2>&1", 0)
+    (testpath/"config/mtk/config.json").delete
     assert_match "Checking mtk dependencies", shell_output("#{bin}/mtk doctor 2>&1", 0)
     assert_match "Usage: mtk", shell_output("#{bin}/mtk --help 2>&1", 0)
     refute_match "Usage: rtk", shell_output("#{bin}/mtk --help 2>&1")

@@ -24,6 +24,7 @@ class PackagingTests(unittest.TestCase):
             formula = (checkout / 'dist/mtk.rb').read_text()
             archive = checkout / 'dist/mtk-v9.8.7.tar.gz'
             self.assertIn('url "' + archive.resolve().as_uri() + '"', formula)
+            self.assertIn('version "9.8.7"', formula)
             self.assertIn(hashlib.sha256(archive.read_bytes()).hexdigest(), formula)
             self.assertEqual((checkout / 'Formula/mtk.rb').read_bytes(), original)
             manifest = json.loads((checkout / 'packaging/manifest.json').read_text())

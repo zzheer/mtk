@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 — 2026-10-04
+
+- Load global display defaults from `~/.config/mtk/config.json`, respecting
+  `XDG_CONFIG_HOME` and CLI overrides. Validate settings before command execution
+  and bound configuration reads.
+- Publish canonical `MTK.md` with global configuration and agent operating rules.
+- Preserve the requested version when generating release formulas; verify
+  configuration and overrides using installed Homebrew binaries.
+- Validate changes with local RED-to-GREEN regressions and 48 offline tests.
+
 ## 0.2.0 — 2026-10-04
 
 - Save complete wrapped-command output in private `/tmp` logs and print the log path last on stderr.

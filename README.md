@@ -2,6 +2,9 @@
 
 > Optimized developer toolkit and proxy wrapping `rtk`, with AI routing, media stubs, and token-saving workflow aliases.
 
+Agent command reference and operating rules: [MTK.md](MTK.md).
+Public guide: [raw MTK.md](https://raw.githubusercontent.com/zzheer/mtk/preview/MTK.md).
+
 ## Installation
 
 Install via Homebrew tap:
@@ -91,6 +94,24 @@ MTK omission has `[truncated by mtk]`. The log filepath prints last on stderr,
 so ordinary stdout remains suitable for pipes and JSON. Existing RTK summaries
 are unchanged; the log cannot recover text RTK removed before emitting output.
 
+Set global display defaults in `~/.config/mtk/config.json`, or
+`$XDG_CONFIG_HOME/mtk/config.json` when `XDG_CONFIG_HOME` is set:
+
+```json
+{
+  "max_lines": 500,
+  "max_bytes": "128KiB",
+  "truncate": true
+}
+```
+
+`max_lines` is a positive integer; `max_bytes` is a positive byte count or size
+string; `truncate` is a JSON boolean. Missing file or omitted keys retain
+defaults of 200 lines, 32 KiB, and truncation enabled. Invalid config exits
+nonzero before command execution. CLI flags `--max-lines`, `--max-bytes`, and
+`--no-truncate` override config values. CPU, memory, and runtime limits remain
+separate CLI flags.
+
 ```bash
 mtk --max-lines 500 --max-bytes 128KiB git diff
 mtk --no-truncate proxy python3 script.py
@@ -117,14 +138,14 @@ an existing output file intact when fetching fails.
 Run `mtk doctor` for dependency paths. Run `just test` for deterministic local
 regression tests; no hosted CI, live search, or shared Codex hook writes.
 
-See [mtk.md](mtk.md) for full documentation of commands, runners, and token-saving analytics.
+See [MTK.md](MTK.md) for full documentation of commands, runners, and token-saving analytics.
 
 ## Releasing (Owned Devices Only)
 
 Release archives and formula checksums are generated 100% locally without cloud CI:
 
 ```bash
-mtk proxy ./scripts/release.sh 0.2.0 --local
+mtk proxy ./scripts/release.sh 0.2.1 --local
 ```
 
-For published formulas, pass `--url https://api.github.com/repos/zzheer/mtk/tarball/v0.2.0`. The packager hashes those exact downloaded bytes and writes `dist/mtk.rb`; it never overwrites your tap.
+For published formulas, pass `--url https://api.github.com/repos/zzheer/mtk/tarball/v0.2.1`. The packager hashes those exact downloaded bytes and writes `dist/mtk.rb`; it never overwrites your tap.
