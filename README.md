@@ -3,7 +3,7 @@
 > Optimized developer toolkit and proxy wrapping `rtk`, with AI routing, media stubs, and token-saving workflow aliases.
 
 Agent command reference and operating rules: [MTK.md](MTK.md).
-Public guide: [raw MTK.md](https://raw.githubusercontent.com/zzheer/mtk/preview/MTK.md).
+Public guide: [raw MTK.md](https://raw.githubusercontent.com/zzheer/mtk/refs/heads/preview/MTK.md).
 
 ## Installation
 

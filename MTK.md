@@ -1,6 +1,6 @@
 # MTK agent guide
 
-Canonical public guide: <https://raw.githubusercontent.com/zzheer/mtk/preview/MTK.md>.
+Canonical public guide: <https://raw.githubusercontent.com/zzheer/mtk/refs/heads/preview/MTK.md>.
 
 Prefer Homebrew-installed `mtk`, resolved through PATH, for routine shell and
 terminal commands. Use `mtk proxy` when it preserves command behavior and useful
