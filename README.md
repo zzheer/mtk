@@ -127,4 +127,4 @@ Release archives and formula checksums are generated 100% locally without cloud 
 mtk proxy ./scripts/release.sh 0.2.0 --local
 ```
 
-For published formulas, pass `--url https://github.com/zzheer/mtk/archive/refs/tags/v0.2.0.tar.gz`. The packager hashes those exact downloaded bytes and writes `dist/mtk.rb`; it never overwrites your tap.
+For published formulas, pass `--url https://api.github.com/repos/zzheer/mtk/tarball/v0.2.0`. The packager hashes those exact downloaded bytes and writes `dist/mtk.rb`; it never overwrites your tap.

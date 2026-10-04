@@ -12,3 +12,4 @@
 - Allow noninteractive, idempotent Codex hook configuration while preserving other hook commands.
 - Use independently published Homebrew `duckduckgo-tools` for search; remove bundled source and hidden fallback.
 - Keep package dependencies, installed helpers, licensed source, and release archive checksums consistent.
+- Publish a pinned source archive checksum for reproducible Homebrew installation.
