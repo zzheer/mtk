@@ -4,6 +4,7 @@
 import codecs
 import errno
 import fcntl
+import json
 import os
 import pty
 import selectors
@@ -25,8 +26,44 @@ parse_bytes = runner_sizes.parse_bytes
 MARKER = b"[truncated by mtk]\n"
 
 
+def defaults():
+    directory = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    path = Path(directory) / "mtk/config.json"
+    try:
+        with path.open() as file:
+            contents = file.read(65537)
+        if len(contents) > 65536:
+            raise ValueError("file exceeds 64 Ki characters")
+        config = json.loads(contents)
+    except FileNotFoundError:
+        return 200, 32768, True
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"config {path}: {exc}") from exc
+    try:
+        if not isinstance(config, dict):
+            raise ValueError("expected JSON object")
+        unknown = config.keys() - {"max_lines", "max_bytes", "truncate"}
+        if unknown:
+            raise ValueError(f"unknown settings: {', '.join(sorted(unknown))}")
+        lines = config.get("max_lines", 200)
+        size = config.get("max_bytes", 32768)
+        truncate = config.get("truncate", True)
+        if type(lines) is not int or lines <= 0:
+            raise ValueError("max_lines must be a positive integer")
+        if type(size) not in (int, str):
+            raise ValueError("max_bytes must be a positive integer or size string")
+        size = parse_bytes(str(size))
+        if size <= 0:
+            raise ValueError("max_bytes must be positive")
+        if type(truncate) is not bool:
+            raise ValueError("truncate must be boolean")
+        return lines, size, truncate
+    except ValueError as exc:
+        raise ValueError(f"config {path}: {exc}") from exc
+
+
 def options(argv):
-    max_lines, max_bytes, truncate = 200, 32768, True
+    max_lines, max_bytes, truncate = defaults()
     command = [argv[0]]
     rest = argv[1:]
     value_flags = {"--time-limit", "--memory-limit", "--mem-limit", "--cpu-limit", "--singleton-name"}

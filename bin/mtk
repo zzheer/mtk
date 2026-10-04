@@ -145,6 +145,8 @@ MTK output and resource options (before COMMAND):
   --singleton[=NAME]    Replace previous workload with same name
   --singleton-wait[=NAME] Wait for previous workload
 
+Defaults read from $XDG_CONFIG_HOME/mtk/config.json or ~/.config/mtk/config.json.
+JSON keys: max_lines, max_bytes, truncate. CLI output flags override settings.
 Every invocation saves wrapped output only to a private /tmp/mtk-*.log.
 MTK marks clipped output with [truncated by mtk]; log filepath prints last
 on stderr. RTK summaries remain unchanged in the log.
