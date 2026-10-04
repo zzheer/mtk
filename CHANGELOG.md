@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rewrote the README with a working truncation demo, Homebrew setup, global
+  configuration, machine-readable output guidance, and resource-limit semantics.
 - Fixed a hang when the global configuration path is a FIFO or another
   nonregular file. MTK now rejects it before starting the wrapped command,
   preserving bounded execution.

@@ -1,153 +1,256 @@
-# mtk
+# MTK — Moruk Token Killer
 
-> Optimized developer toolkit and proxy wrapping `rtk`, with AI routing, media stubs, and token-saving workflow aliases.
+**Less terminal noise. Complete logs. Bounded workloads.**
 
-Agent command reference and operating rules: [MTK.md](MTK.md).
-Public guide: [raw MTK.md](https://raw.githubusercontent.com/zzheer/mtk/refs/heads/preview/MTK.md).
-
-## Installation
-
-Install via Homebrew tap:
+MTK wraps RTK with explicit output limits, private logs, and optional CPU,
+memory, and time limits. Keep everyday terminal output compact while retaining
+complete wrapped output for investigating failures.
 
 ```bash
-brew tap zzheer/tap
-brew install mtk
+mtk git status
+mtk --time-limit 60s --memory-limit 2G --cpu-limit 100 npm test
+mtk --no-truncate proxy python3 script.py
 ```
 
-Or install directly from this repository:
+[Install](#install) · [Try it](#try-it) · [Output and logs](#output-and-logs) ·
+[Global config](#global-config) · [Resource limits](#resource-limits) ·
+[Agent guide](MTK.md)
+
+## Install
+
+Homebrew installs MTK and its declared dependencies:
 
 ```bash
-brew install --build-from-source Formula/mtk.rb
+brew install zzheer/tap/mtk
+mtk doctor
 ```
 
-## Shell Integration
-
-To activate productivity shortcuts and shell aliases (`mr`, `mrg`, `mgit`, `mpd`, etc.):
+Already installed?
 
 ```bash
-# Add to ~/.zshrc or ~/.bashrc:
-eval "$(mtk env)"
+brew update
+brew upgrade zzheer/tap/mtk
 ```
 
-Or source directly:
+On Apple Silicon macOS, the usual command path is `/opt/homebrew/bin/mtk`.
+Verify your shell with `command -v mtk`. Homebrew owns the installation; no
+source-checkout wrapper or CPU helper under your home directory is required.
+
+## Try it
+
+Print eight lines with a three-line display limit:
 
 ```bash
-source $(brew --prefix)/share/mtk/mtk-aliases.sh
+mtk --max-lines 3 proxy python3 -c 'for i in range(1, 9): print(f"line {i}")'
 ```
 
-## Quick Start
+Displayed output:
 
-- **System health & dependencies**:
-  ```bash
-  mtk doctor
-  ```
-- **File operations & git**:
-  ```bash
-  mtk ls .
-  mtk git status
-  mtk diff file1 file2
-  ```
-- **Python proxy shortcut**:
-  ```bash
-  mpp script.py  # Standalone binary shortcut for `mtk proxy python3`
-  ```
-- **AI model router**:
-  ```bash
-  mtk ai --provider openrouter --model anthropic/claude-3.5-sonnet --prompt "Hello"
-  ```
-- **Resource limits & governance**:
-  ```bash
-  mtk --time-limit 30s npm test
-  mtk --memory-limit 2G python3 process.py
-  mtk --cpu-limit 50% ffmpeg -i in.mp4 out.mp4
-  mtk --singleton=myserver ./run_server.sh  # Auto-kills previous instance
-  mtk --singleton-wait ./deploy.sh          # Waits for active instance
-  ```
-- **MarkItDown conversion**:
-  ```bash
-  mtk markitdown doc.pdf -o doc.md
-  mmd presentation.pptx  # Using alias
-  ```
-- **Codex CLI hook setup**:
-  ```bash
-  mtk hook codex         # Configures ~/.codex/hooks.json
-  mtk hook codex --local # Configures .codex/hooks.json
-  ```
-- **Web search & resilient fetch**:
-  ```bash
-  mtk search-web "rust programming" --limit 5  # DuckDuckGo search (free, 0 tokens)
-  mtk fetch https://news.ycombinator.com       # Stealth browser fetch -> clean Markdown
-  mtk fetch https://example.com -o page.md     # Save markdown to file
-  ```
-- **Proxy fallback**:
-  Any command not built into `mtk` or `rtk` (e.g., `mtk date`, `mtk fd`) automatically executes under `rtk proxy`.
+```text
+line 1
+line 2
+line 3
+[truncated by mtk]
 
-## Output limits and complete logs
-
-Every invocation saves complete wrapped output in a private `/tmp/mtk-*.log`.
-The file contains only the output emitted by the wrapped command, including RTK
-summaries. MTK markers and the filepath footer never enter the log. stdout and
-stderr are logged in observed arrival order, without extra labels.
-
-Display defaults: 200 lines or 32 KiB per stream, whichever comes first. Each
-MTK omission has `[truncated by mtk]`. The log filepath prints last on stderr,
-so ordinary stdout remains suitable for pipes and JSON. Existing RTK summaries
-are unchanged; the log cannot recover text RTK removed before emitting output.
-
-Set global display defaults in `~/.config/mtk/config.json`, or
-`$XDG_CONFIG_HOME/mtk/config.json` when `XDG_CONFIG_HOME` is set:
-
-```json
-{
-  "max_lines": 500,
-  "max_bytes": "128KiB",
-  "truncate": true
-}
+/tmp/mtk-<unique-id>.log
 ```
 
-`max_lines` is a positive integer; `max_bytes` is a positive byte count or size
-string; `truncate` is a JSON boolean. Missing file or omitted keys retain
-defaults of 200 lines, 32 KiB, and truncation enabled. Invalid config exits
-nonzero before command execution. Config must be a regular JSON file: FIFOs,
-devices, and other nonregular files are rejected before command execution;
-symlinks to regular files are allowed. CLI flags `--max-lines`, `--max-bytes`, and
-`--no-truncate` override config values. CPU, memory, and runtime limits remain
-separate CLI flags.
+The marker shows where MTK stopped displaying output. The final path is
+printed on **stderr**. Open that file to see all eight lines; the log has
+neither the marker nor the filepath footer.
+
+For common development commands:
+
+```bash
+mtk ls .
+mtk git diff
+mtk cargo test
+mtk proxy just test
+mtk proxy python3 script.py
+```
+
+RTK-supported commands retain RTK's summaries. Use `mtk proxy COMMAND` for
+command output without a command-specific RTK summary. Unknown commands also
+use the proxy path; interactive passthrough keeps a terminal attached.
+
+## Output and logs
+
+The default display limit is **200 lines or 32 KiB per stream**, whichever
+comes first. MTK keeps draining output after the display limit and writes it
+to a unique private `/tmp/mtk-*.log` with permissions `0600`.
+
+- Each MTK clipping region gets the exact marker `[truncated by mtk]`.
+- The log contains only bytes emitted by the wrapped command.
+- stdout and stderr are captured in observed arrival order, without labels.
+- The log filepath prints last on stderr, after output drains.
+- Normal exit codes and shell-compatible signal statuses are preserved.
+- Capture failures are reported explicitly.
+
+**Complete means complete wrapped output.** If RTK already summarized or
+removed text, MTK cannot reconstruct it. Choose `proxy` when you need the
+command's unsummarized output.
+
+Noninteractive execution uses separate stdout/stderr pipes and separate display
+budgets. When stdin, stdout, and stderr are terminals, MTK uses a PTY: combined
+terminal output shares one display budget. stdin, signals, and resize are
+forwarded.
+
+Override limits before the command:
 
 ```bash
 mtk --max-lines 500 --max-bytes 128KiB git diff
 mtk --no-truncate proxy python3 script.py
-mtk --time-limit 30s --memory-limit 2G --cpu-limit 150 npm test
-mtk --cpu-limit 50 --exclude-children proxy python3 script.py
 ```
 
-CPU limits include children by default. MTK packages a corrected limiter for
-Apple Silicon; no user-home helper is required. Timeout/memory termination
-cleans the full workload before returning 124/137 respectively. Interactive
-passthrough uses a PTY and forwards stdin, signals, and terminal resize.
+**For JSON and other machine-readable pipelines, use `--no-truncate`.**
+A truncation marker in stdout would otherwise break the data format. Logging
+and the stderr footer remain enabled.
 
-## Dependencies
+Display limits do not limit log size. `/tmp` logs can contain sensitive command
+output; manage retention and available disk space separately.
 
-Homebrew manages runtimes and utilities. The search provider is separate:
-[duckduckgo-tools](https://github.com/zzheer/duckduckgo-tools), installed through
-`zzheer/tap/duckduckgo-tools`. No bundled checkout or Instant Answer fallback.
-Search is enabled only after provider publication and installation validation.
+## Global config
 
-MarkItDown runs via its installed binary or `uvx markitdown`. Fetch uses local
-converters with a Jina fallback, checks final HTTP/content validity, and keeps
-an existing output file intact when fetching fails.
+Create `~/.config/mtk/config.json` to set display defaults. If `XDG_CONFIG_HOME`
+is set, MTK reads `$XDG_CONFIG_HOME/mtk/config.json` instead.
 
-Run `mtk doctor` for dependency paths. Run `just test` for deterministic local
-regression tests; no hosted CI, live search, or shared Codex hook writes.
+```json
+{
+  "max_lines": 200,
+  "max_bytes": "32KiB",
+  "truncate": true
+}
+```
 
-See [MTK.md](MTK.md) for full documentation of commands, runners, and token-saving analytics.
+`max_lines` accepts a positive integer. `max_bytes` accepts a positive integer
+byte count or a size string, such as `"128KiB"`. `truncate` accepts a JSON
+boolean; `false` disables display clipping while retaining the log.
 
-## Releasing (Owned Devices Only)
+CLI flags override corresponding config values. Missing files and omitted
+keys use built-in defaults. Unknown keys, invalid JSON, and invalid values fail
+before the wrapped command runs.
 
-Release archives and formula checksums are generated 100% locally without cloud CI:
+Config must be a regular JSON file. FIFOs, devices, and other nonregular files
+are rejected before command execution; symlinks to regular files are allowed.
+Config reads are bounded to 64 Ki characters. Resource limits remain separate
+CLI options.
+
+## Resource limits
+
+Bound a workload independently of how much output you display:
 
 ```bash
-mtk proxy ./scripts/release.sh 0.2.1 --local
+mtk --time-limit 60s --memory-limit 2G --cpu-limit 100 proxy python3 worker.py
 ```
 
-For published formulas, pass `--url https://api.github.com/repos/zzheer/mtk/tarball/v0.2.1`. The packager hashes those exact downloaded bytes and writes `dist/mtk.rb`; it never overwrites your tap.
+- `--time-limit DURATION`: terminate the workload at its deadline.
+- `--memory-limit SIZE`: terminate when sampled total workload RSS exceeds the limit.
+- `--cpu-limit PERCENT`: limit CPU use, including descendants by default.
+- `--exclude-children`: apply the CPU limit to the root process only.
+
+CPU percentage uses one logical core as `100`; `50` means half a core.
+MTK ships its corrected CPU limiter, including support for Apple Silicon.
+Requested CPU enforcement fails explicitly if the limiter is unavailable.
+
+Memory is checked periodically; this is a termination threshold, not a hard
+allocation cap. Timeout and memory cleanup cover the full workload, including
+descendants, even with `--exclude-children`. MTK waits for cleanup and escalates
+surviving processes to SIGKILL. Timeout returns `124`; memory breach returns
+`137`. With child exclusion, the root may be a shell or RTK wrapper, leaving
+the actual worker uncapped.
+
+For workload coordination, `--singleton=NAME` replaces an existing workload
+with that name; `--singleton-wait=NAME` waits for it.
+
+## Search and fetch
+
+Search uses the separately published
+[duckduckgo-tools](https://github.com/zzheer/duckduckgo-tools) Homebrew dependency:
+
+```bash
+mtk search-web "Rust ownership" --limit 5
+mtk --no-truncate search-web "Rust ownership" --limit 5 --json
+```
+
+MTK calls the installed provider executable. No bundled source checkout or
+Instant Answer fallback is used. A missing provider returns an actionable
+nonzero error. Network access and provider availability are required.
+
+Fetch web content as Markdown:
+
+```bash
+mtk --time-limit 45s fetch https://example.com -o page.md
+mtk markitdown document.pdf -o document.md
+```
+
+Fetch rejects HTTP errors and recognized challenge content, then tries available
+fallbacks. If no attempt yields accepted content, it returns nonzero and preserves
+an existing destination file.
+Local fetching/conversion can fall back to the remote Jina service; this is
+not a guarantee of browser or JavaScript rendering. MarkItDown runs through
+an installed binary or `uvx`.
+
+## Shell shortcuts and agents
+
+Optional aliases for bash/zsh:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+eval "$(mtk env)"
+```
+
+Examples: `mgit` → `mtk git`, `mp` → `mtk proxy`, `mrg` → `mtk rg`.
+The standalone `mpp` command runs `mtk proxy python3`.
+
+The public [MTK agent guide](MTK.md) describes commands, limits, logs, and when
+direct execution is appropriate. For global agent instructions, use the
+[canonical raw guide](https://raw.githubusercontent.com/zzheer/mtk/refs/heads/preview/MTK.md).
+Prefer the Homebrew command resolved through PATH. If wrapping changes required
+behavior or hides necessary diagnostics, run the underlying command directly.
+
+Optional Codex hook configuration:
+
+```bash
+mtk hook codex --help
+mtk hook codex          # Global ~/.codex/hooks.json
+mtk hook codex --local  # Project .codex/hooks.json
+```
+
+Setup preserves existing hook entries and is idempotent. Using MTK from the
+shell does not require enabling currently disabled Codex hooks.
+
+## Development and releases
+
+Run project checks locally:
+
+```bash
+just test
+```
+
+Tests use deterministic fixtures, mocked executables, and isolated Codex homes.
+Governor checks also exercise real child processes. Project policy requires
+CI, builds, tests, and automated reviews to run exclusively on owned devices:
+no GitHub Actions, hosted reviews, or additional paid GitHub automation.
+
+One [installation manifest](packaging/manifest.json) defines dependencies,
+helpers, filters, source files, and the private limiter build. Generate a local
+archive and formula with:
+
+```bash
+mtk proxy ./scripts/release.sh 0.2.2 --local
+```
+
+For a published formula, pass `--url` with its exact HTTPS source archive URL.
+The packager downloads that archive, validates required files, and derives its
+SHA256 from those exact bytes. Outputs stay in local `dist/`; the packager does
+not overwrite your Homebrew tap. Homebrew formulas must be installed from a tap.
+
+Contributions use `feat/` branches and PRs targeting `preview`.
+See [CHANGELOG.md](CHANGELOG.md) for changes.
+
+## License and credits
+
+MTK's own source is [MIT licensed](LICENSE). The vendored CPU limiter retains
+its [GPL-2.0-or-later license](vendor/cpulimit/COPYING) and
+[provenance](vendor/cpulimit/PROVENANCE.md). The Homebrew formula declares both.
+RTK provides command summaries; duckduckgo-tools provides web search.
