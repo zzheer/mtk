@@ -3,9 +3,9 @@ class Mtk < Formula
 
   desc "Optimized CLI proxy and AI developer toolkit wrapping rtk"
   homepage "https://github.com/zzheer/mtk"
-  url "https://api.github.com/repos/zzheer/mtk/tarball/v0.2.0"
-  version "0.2.0"
-  sha256 "b4d2b8c542736e3a7c4c2c7e4db49f55f2f422c5a0843706e8b27e00a60d0cf4"
+  url "https://api.github.com/repos/zzheer/mtk/tarball/65057849764fffa7414f510397fa0f82a5eda7da"
+  version "0.2.1"
+  sha256 "2d3ab2b403bc7da8ac59d5ccc47798d0e2afb5d1d8365c9974ebe7c051cc5855"
   license all_of: ["MIT", "GPL-2.0-or-later"]
 
   depends_on "ast-grep"
