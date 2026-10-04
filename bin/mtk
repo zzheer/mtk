@@ -27,6 +27,131 @@ elif command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN="$(command -v python3)"
 fi
 
+# Capture one outer invocation; internal dispatch and governor re-entry skip it.
+if [[ "${MTK_OUTPUT_INTERNAL:-}" == "1" ]]; then
+  unset MTK_OUTPUT_INTERNAL
+elif [[ -n "$PYTHON_BIN" ]]; then
+  exec "$PYTHON_BIN" "$LIBEXEC_DIR/mtk-output.py" "$BIN_DIR/mtk" "$@"
+else
+  echo "mtk: python3 is required for complete output logging" >&2
+  exit 127
+fi
+
+# Parse resource governance options before subcommand
+runner_args=()
+has_governor=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --time-limit|--time-limit=*)
+      has_governor=1
+      if [[ "$1" == *=* ]]; then
+        runner_args+=("--time-limit" "${1#*=}")
+        shift
+      else
+        runner_args+=("--time-limit" "$2")
+        shift 2
+      fi
+      ;;
+    --memory-limit|--memory-limit=*|--mem-limit|--mem-limit=*)
+      has_governor=1
+      if [[ "$1" == *=* ]]; then
+        runner_args+=("--memory-limit" "${1#*=}")
+        shift
+      else
+        runner_args+=("--memory-limit" "$2")
+        shift 2
+      fi
+      ;;
+    --cpu-limit|--cpu-limit=*)
+      has_governor=1
+      if [[ "$1" == *=* ]]; then
+        runner_args+=("--cpu-limit" "${1#*=}")
+        shift
+      else
+        runner_args+=("--cpu-limit" "$2")
+        shift 2
+      fi
+      ;;
+    --exclude-children)
+      has_governor=1
+      runner_args+=("--exclude-children")
+      shift
+      ;;
+    --singleton)
+      has_governor=1
+      shift
+      runner_args+=("--singleton")
+      ;;
+    --singleton=*)
+      has_governor=1
+      runner_args+=("--singleton" "${1#*=}")
+      shift
+      ;;
+    --singleton-name)
+      has_governor=1
+      runner_args+=("--singleton" "$2")
+      shift 2
+      ;;
+    --singleton-wait)
+      has_governor=1
+      shift
+      runner_args+=("--singleton-wait")
+      ;;
+    --singleton-wait=*)
+      has_governor=1
+      runner_args+=("--singleton-wait" "${1#*=}")
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      # Other flag (e.g. --help, --version)
+      break
+      ;;
+    *)
+      # Start of command
+      break
+      ;;
+  esac
+done
+
+if [[ $has_governor -eq 1 ]]; then
+  if [[ $# -eq 0 ]]; then
+    echo "mtk: missing command to run under resource governor" >&2
+    exit 2
+  fi
+  if [[ -z "$PYTHON_BIN" ]]; then
+    echo "mtk: python3 is required for resource governor options but not found in PATH" >&2
+    exit 127
+  fi
+  export MTK_OUTPUT_INTERNAL=1
+  exec "$PYTHON_BIN" "$LIBEXEC_DIR/mtk-runner.py" "${runner_args[@]}" -- "$BIN_DIR/mtk" "$@"
+fi
+
+# MTK options precede the command; command-specific help remains RTK help.
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'EOF'
+MTK output and resource options (before COMMAND):
+  --max-lines N         Display at most N lines per stream (default: 200)
+  --max-bytes SIZE      Display at most SIZE bytes per stream (default: 32KiB)
+  --no-truncate         Display all wrapped output; still write complete log
+  --time-limit DURATION Terminate entire workload at deadline
+  --memory-limit SIZE   Limit total workload RSS
+  --cpu-limit PERCENT   Limit CPU, including children by default
+  --exclude-children    Apply CPU limit to root process only
+  --singleton[=NAME]    Replace previous workload with same name
+  --singleton-wait[=NAME] Wait for previous workload
+
+Every invocation saves wrapped output only to a private /tmp/mtk-*.log.
+MTK marks clipped output with [truncated by mtk]; log filepath prints last
+on stderr. RTK summaries remain unchanged in the log.
+
+EOF
+fi
+
 # Subcommand: mtk env / mtk init
 if [[ "${1:-}" == "env" || "${1:-}" == "init" ]]; then
   if [[ -f "$SHARE_DIR/mtk-aliases.sh" ]]; then
@@ -50,6 +175,7 @@ alias mpe='mtk pnpm exec'
 alias mnpm='mtk npm'
 alias mnpx='mtk npx'
 alias mssh='mtk proxy ssh'
+alias mmd='mtk markitdown'
 mpp() { mtk proxy python3 "$@"; }
 EOF
     exit 0
@@ -75,7 +201,7 @@ fi
 # Subcommand: mtk doctor
 if [[ "${1:-}" == "doctor" ]]; then
   echo "Checking mtk dependencies:"
-  for dep in rtk python3 node pnpm bun rg fd gh just ast-grep uv; do
+  for dep in rtk python3 node pnpm bun rg fd gh just ast-grep uv curl-cffi; do
     if command -v "$dep" >/dev/null 2>&1; then
       path="$(command -v "$dep")"
       echo "  [✓] $dep ($path)"
@@ -83,7 +209,156 @@ if [[ "${1:-}" == "doctor" ]]; then
       echo "  [✗] $dep (not found in PATH)"
     fi
   done
+
+  if [[ -x "$LIBEXEC_DIR/mtk-cpulimit" ]]; then
+    echo "  [✓] mtk-cpulimit ($LIBEXEC_DIR/mtk-cpulimit)"
+  elif [[ -x "$PREFIX/vendor/cpulimit/src/cpulimit" ]]; then
+    echo "  [✓] mtk-cpulimit ($PREFIX/vendor/cpulimit/src/cpulimit)"
+  else
+    echo "  [✗] mtk-cpulimit (not built; reinstall mtk with Homebrew)"
+  fi
+  if command -v duckduckgo-tools >/dev/null 2>&1; then
+    echo "  [✓] duckduckgo-tools ($(command -v duckduckgo-tools))"
+  else
+    echo "  [✗] duckduckgo-tools (install: brew install zzheer/tap/duckduckgo-tools)"
+  fi
+
+  # Check markitdown
+  if command -v markitdown >/dev/null 2>&1; then
+    echo "  [✓] markitdown ($(command -v markitdown))"
+  elif command -v uvx >/dev/null 2>&1; then
+    echo "  [✓] markitdown (available via uvx markitdown)"
+  elif [[ -n "$PYTHON_BIN" ]] && "$PYTHON_BIN" -c "import markitdown" >/dev/null 2>&1; then
+    echo "  [✓] markitdown (available via $PYTHON_BIN -m markitdown)"
+  else
+    echo "  [✗] markitdown (not found; install via: uv tool install markitdown)"
+  fi
+
+  # Check jina-reader-cli (optional cloud fallback)
+  if command -v jina-reader-cli >/dev/null 2>&1; then
+    echo "  [✓] jina-reader-cli ($(command -v jina-reader-cli))"
+  fi
+
   exit 0
+fi
+
+# Subcommand: mtk search-web / mtk search
+if [[ "${1:-}" == "search-web" || "${1:-}" == "search" ]]; then
+  shift
+  exec "$LIBEXEC_DIR/mtk-search" "$@"
+fi
+
+# Subcommand: mtk fetch
+if [[ "${1:-}" == "fetch" ]]; then
+  shift
+  exec "$LIBEXEC_DIR/mtk-fetch" "$@"
+fi
+
+# Subcommand: mtk markitdown / mtk md
+if [[ "${1:-}" == "markitdown" || "${1:-}" == "md" ]]; then
+  shift
+  if command -v markitdown >/dev/null 2>&1; then
+    exec rtk proxy markitdown "$@"
+  elif command -v uvx >/dev/null 2>&1; then
+    exec rtk proxy uvx markitdown "$@"
+  elif [[ -n "$PYTHON_BIN" ]] && "$PYTHON_BIN" -c "import markitdown" >/dev/null 2>&1; then
+    exec rtk proxy "$PYTHON_BIN" -m markitdown "$@"
+  else
+    echo "mtk markitdown: 'markitdown' is not installed." >&2
+    echo "Install it via: uv tool install markitdown  (or: pip install markitdown)" >&2
+    exit 127
+  fi
+fi
+
+# Subcommand: mtk hook codex
+if [[ "${1:-}" == "hook" && "${2:-}" == "codex" ]]; then
+    shift 2
+
+    target="global"
+    for arg in "$@"; do
+      case "$arg" in
+        --local|-l)
+          target="local"
+          ;;
+        --global|-g)
+          target="global"
+          ;;
+        --help|-h)
+          cat <<'EOF'
+Usage: mtk hook codex [OPTIONS]
+
+Configure Codex CLI PreToolUse hook pointing to 'rtk hook codex'.
+
+Options:
+  -g, --global   Configure global hooks in ~/.codex/hooks.json (default)
+  -l, --local    Configure project-local hooks in .codex/hooks.json
+  -h, --help     Show this help message
+EOF
+          exit 0
+          ;;
+        *)
+          echo "mtk hook codex: unknown option '$arg'" >&2
+          exit 2
+          ;;
+      esac
+    done
+
+    if [[ "$target" == "local" ]]; then
+      hook_dir=".codex"
+    else
+      hook_dir="${CODEX_HOME:-$HOME/.codex}"
+    fi
+
+    mkdir -p "$hook_dir"
+    hook_file="$hook_dir/hooks.json"
+
+    if [[ -z "$PYTHON_BIN" ]]; then
+      echo "mtk hook codex: python3 is required to configure hooks.json" >&2
+      exit 127
+    fi
+
+    "$PYTHON_BIN" -c '
+import json, sys, os
+hook_file = sys.argv[1]
+data = {}
+if os.path.isfile(hook_file):
+    try:
+        with open(hook_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+
+if not isinstance(data, dict):
+    data = {}
+hooks = data.setdefault("hooks", {})
+pre_tool = hooks.setdefault("PreToolUse", [])
+
+exists = False
+for entry in pre_tool:
+    if isinstance(entry, dict) and entry.get("matcher") == "Bash":
+        for h in entry.get("hooks", []):
+            if isinstance(h, dict) and "rtk hook codex" in h.get("command", ""):
+                exists = True
+                break
+
+if not exists:
+    pre_tool.append({
+        "matcher": "Bash",
+        "hooks": [
+            {
+                "type": "command",
+                "command": "rtk hook codex"
+            }
+        ]
+    })
+
+with open(hook_file, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+' "$hook_file"
+
+    echo "mtk: successfully configured Codex hook in $hook_file"
+    exit 0
 fi
 
 # Subcommand: mtk ai
@@ -109,7 +384,7 @@ case "${1:-}" in
     ;;
 esac
 
-# Core command execution via rtk (with help filter for rtk -> mtk)
+# Core command execution via rtk / libexec helper with proxy fallback
 if [[ -f "$LIBEXEC_DIR/mtk-core.sh" ]]; then
   # shellcheck source=/dev/null
   source "$LIBEXEC_DIR/mtk-core.sh"
@@ -131,6 +406,6 @@ else
   if [[ $has_help -eq 1 ]]; then
     command rtk "$@" | sed -e 's/rtk/mtk/g' -e 's/RTK/MTK/g'
   else
-    exec rtk "$@"
+    command rtk proxy "$@"
   fi
 fi

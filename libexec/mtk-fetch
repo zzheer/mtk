@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# libexec/mtk-fetch - Resilient web page fetcher & markdown extractor
+
+output_file=""
+url=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o|--output)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "mtk fetch: --output requires a file" >&2
+        exit 2
+      fi
+      output_file="$2"
+      shift 2
+      ;;
+    --output=*)
+      output_file="${1#*=}"
+      shift
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: mtk fetch <url> [OPTIONS]
+
+Fetch web page content and convert to clean Markdown.
+Uses browser impersonation (curl-cffi) to bypass anti-bot WAFs,
+converting to Markdown via markitdown / trafilatura, with cloud fallback.
+
+Options:
+  -o, --output <FILE>   Save markdown output to file instead of stdout
+  -h, --help            Show this help message
+EOF
+      exit 0
+      ;;
+    *)
+      if [[ -z "$url" ]]; then
+        url="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$url" ]]; then
+  echo "mtk fetch: missing URL" >&2
+  echo "Usage: mtk fetch <url> [-o <file>]" >&2
+  exit 2
+fi
+
+# Normalize URL
+if [[ ! "$url" =~ ^https?:// ]]; then
+  url="https://$url"
+fi
+
+result_markdown=""
+
+# Helper to check if text is substantial valid markdown (not an empty shell or anti-bot challenge)
+is_valid_content() {
+  local content="$1"
+  local len=${#content}
+  if [[ $len -lt 60 ]]; then
+    return 1
+  fi
+  if [[ "$content" =~ (Attention\ Required\!\ \|\ Cloudflare|Just\ a\ moment\.\.\.|Enable\ JavaScript\ and\ cookies\ to\ continue|Checking\ your\ browser\ before\ accessing|anomaly-modal) ]]; then
+    return 1
+  fi
+  return 0
+}
+
+# Stage 1: Try stealth fetch with curl-cffi impersonating Chrome
+raw_html=""
+if command -v curl-cffi >/dev/null 2>&1; then
+  raw_html="$(curl-cffi --impersonate chrome116 --silent --fail --location --max-time 20 --max-filesize 5242880 "$url" 2>/dev/null)" || raw_html=""
+fi
+
+if [[ -z "$raw_html" ]] && command -v curl >/dev/null 2>&1; then
+  raw_html="$(curl -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+    --silent --fail --location --max-time 20 --max-filesize 5242880 "$url" 2>/dev/null)" || raw_html=""
+fi
+
+# Stage 2: Convert fetched HTML to Markdown via markitdown or trafilatura
+if [[ -n "$raw_html" ]]; then
+  if command -v trafilatura >/dev/null 2>&1; then
+    result_markdown="$(printf '%s' "$raw_html" | trafilatura --markdown 2>/dev/null)" || result_markdown=""
+  fi
+
+  if ! is_valid_content "$result_markdown"; then
+    if command -v markitdown >/dev/null 2>&1; then
+      result_markdown="$(printf '%s' "$raw_html" | markitdown -x html 2>/dev/null)" || result_markdown=""
+    elif command -v uvx >/dev/null 2>&1; then
+      result_markdown="$(printf '%s' "$raw_html" | uvx markitdown -x html 2>/dev/null)" || result_markdown=""
+    fi
+  fi
+fi
+
+# Stage 3: Fallback to Jina Reader if local fetch blocked / SPA
+if ! is_valid_content "$result_markdown"; then
+  if command -v jina-reader-cli >/dev/null 2>&1; then
+    result_markdown="$(jina-reader-cli read "$url" --format markdown 2>/dev/null)" || result_markdown=""
+  fi
+  if ! is_valid_content "$result_markdown"; then
+    result_markdown="$(curl --silent --fail --location --max-time 20 --max-filesize 5242880 "https://r.jina.ai/$url" 2>/dev/null)" || result_markdown=""
+  fi
+fi
+
+if ! is_valid_content "$result_markdown"; then
+  echo "mtk fetch: failed to fetch content from $url" >&2
+  exit 1
+fi
+
+if [[ -n "$output_file" ]]; then
+  output_tmp="$(mktemp "${output_file}.tmp.XXXXXX")"
+  trap 'rm -f "$output_tmp"' EXIT
+  printf '%s\n' "$result_markdown" > "$output_tmp"
+  mv -f "$output_tmp" "$output_file"
+  trap - EXIT
+  echo "mtk fetch: saved content to $output_file"
+else
+  printf '%s\n' "$result_markdown"
+fi

@@ -1,0 +1,69 @@
+{
+  "dependencies": [
+    "ast-grep",
+    "bun",
+    "fd",
+    "gh",
+    "just",
+    "node",
+    "pnpm",
+    "python@3.12",
+    "ripgrep",
+    "rtk",
+    "uv",
+    "zzheer/tap/duckduckgo-tools"
+  ],
+  "install": {
+    "libexec": [
+      "libexec/mtk-ai",
+      "libexec/mtk-media",
+      "libexec/mtk-core.sh",
+      "libexec/mtk-runner.py",
+      "libexec/mtk-output.py",
+      "libexec/mtk-search",
+      "libexec/mtk-fetch"
+    ],
+    "bin": [
+      "bin/mtk",
+      "bin/mpp"
+    ],
+    "pkgshare": [
+      "share/mtk/mtk-aliases.sh",
+      "share/mtk/justfile",
+      "share/mtk/filters.toml",
+      "vendor/cpulimit/COPYING",
+      "vendor/cpulimit/LICENSE",
+      "vendor/cpulimit/PROVENANCE.md"
+    ]
+  },
+  "python_shebangs": [
+    "mtk-ai",
+    "mtk-media",
+    "mtk-runner.py",
+    "mtk-output.py"
+  ],
+  "licenses": [
+    "MIT",
+    "GPL-2.0-or-later"
+  ],
+  "source_files": [
+    "vendor/cpulimit/README.md",
+    "vendor/cpulimit/src/Makefile",
+    "vendor/cpulimit/src/cpulimit.c",
+    "vendor/cpulimit/src/list.c",
+    "vendor/cpulimit/src/list.h",
+    "vendor/cpulimit/src/memrchr.c",
+    "vendor/cpulimit/src/process_group.c",
+    "vendor/cpulimit/src/process_group.h",
+    "vendor/cpulimit/src/process_iterator.c",
+    "vendor/cpulimit/src/process_iterator.h",
+    "vendor/cpulimit/src/process_iterator_apple.c",
+    "vendor/cpulimit/src/process_iterator_freebsd.c",
+    "vendor/cpulimit/src/process_iterator_linux.c"
+  ],
+  "build": {
+    "directory": "vendor/cpulimit/src",
+    "binary": "vendor/cpulimit/src/cpulimit",
+    "install_name": "mtk-cpulimit"
+  }
+}

@@ -104,10 +104,83 @@ mtk discover --all --since 7 # All projects, last 7 days
 
 mtk session # Show mtk adoption across recent sessions
 
+## Resource Governance & Limits
+
+Apply process constraints to any mtk, rtk, or proxied command:
+
+```bash
+# Time limit (s, m, h)
+mtk --time-limit 30s npm test
+mtk --time-limit 5m cargo build
+
+# Memory limit (RSS polling every 500ms)
+mtk --memory-limit 2G python3 data_processor.py
+mtk --memory-limit 500M node script.js
+
+# CPU throttling (bundled corrected limiter; children included by default)
+mtk --cpu-limit 50% ffmpeg -i input.mp4 output.mp4
+mtk --cpu-limit 50 --exclude-children proxy python3 script.py
+
+# Singleton (terminates previous instance with up to 5 retries)
+mtk --singleton=server_sync ./sync.sh
+mtk --singleton npm run dev  # Auto-derives lock key from command
+
+# Singleton Wait (blocks until existing instance finishes)
+mtk --singleton-wait=deploy ./deploy.sh
+```
+
+## Conversion & MarkItDown
+
+mtk markitdown document.pdf # Convert PDF/Word/Excel/Audio to Markdown (via uvx/binary)
+mtk markitdown document.docx -o doc.md # Save converted markdown
+mmd presentation.pptx # Alias for `mtk markitdown`
+
+## Assistant Hooks
+
+mtk hook codex # Configure global Codex CLI PreToolUse hook (~/.codex/hooks.json)
+mtk hook codex --local # Configure project-local Codex hook (.codex/hooks.json)
+
+## Web Search & Resilient Fetch
+
+mtk search-web "rust language" # DuckDuckGo web search (free, 0 tokens, native binary)
+mtk search-web "query" --limit 10 # Up to 50 results (default 5)
+mtk search-web "query" --json # Output raw search-cli/v1 JSON envelope
+mtk fetch https://example.com # Stealth browser fetch (curl-cffi) -> Markdown (markitdown)
+mtk fetch https://news.ycombinator.com -o hn.md # Save markdown directly to file
+
+## Dependency Architecture & Health
+
+mtk doctor # Audits all runtimes, proxies, limiters, and scrapers
+just install-search # Installs independent zzheer/tap/duckduckgo-tools
+just test # Offline, bounded regression tests
+just audit # Audits Homebrew formula locally
+
+- Homebrew formula/dependency installation is defined by `packaging/manifest.json`.
+- Search uses installed `duckduckgo-tools`; no source checkout or Instant Answer fallback.
+- Corrected GPL limiter source and notices ship with MTK; Homebrew builds private `mtk-cpulimit`.
+- MarkItDown runs on demand through installed binary or `uvx`.
+
+## Output and logs
+
+```bash
+mtk --max-lines 500 --max-bytes 128KiB git diff
+mtk --no-truncate proxy python3 script.py
+```
+
+Defaults: 200 lines / 32 KiB per stream. Each MTK clipping region has exact
+`[truncated by mtk]`. Unique private `/tmp/mtk-*.log` contains complete wrapped
+output only; stdout/stderr bytes follow observed arrival order. The final
+filepath is on stderr. RTK summaries remain unchanged in the log. Flags must
+precede the command; `--no-truncate` still logs output and prints the filepath.
+
+Codex resolves Homebrew `/opt/homebrew/bin/mtk` through PATH. Existing hooks
+need not be enabled; verify `command -v mtk` and `mtk --help` from its shell.
+
 ## Preferences
 
 Instead of using `mtk proxy python3`, I prever that you use bun with `mtk bun` for everyday tasks.
 Prefer `mtk proxy fd` over `find`. Prefer `mtk rg` over `grep`.
+Any unknown command not recognized as an internal mtk or native rtk subcommand automatically falls back to `mtk proxy <command>`.
 
 # Aliases
 
@@ -127,3 +200,4 @@ mpe = mtk pnpm exec
 mnpm = mtk npm
 mnpx = mtk npx
 mssh = mtk proxy ssh
+mmd = mtk markitdown
