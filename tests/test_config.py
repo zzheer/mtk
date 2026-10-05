@@ -101,6 +101,13 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result.stdout, b'')
         self.assertIn(b'expected a regular JSON file', result.stderr)
 
+    def test_invalid_utf8_config_fails_before_governor(self):
+        self.config.write_bytes(b'{"max_lines": 1}\xff')
+        result = self.run_mtk()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b'config', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()
