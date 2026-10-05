@@ -32,7 +32,7 @@ def defaults():
     path = Path(directory) / "mtk/config.json"
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-        with os.fdopen(fd) as file:
+        with os.fdopen(fd, encoding="utf-8") as file:
             if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
                 raise ValueError("expected a regular JSON file")
             contents = file.read(65537)

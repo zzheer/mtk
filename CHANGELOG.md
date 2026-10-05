@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Read global config as UTF-8 and cover symlink-to-regular success plus device
+  and FIFO rejection with a specific stderr assertion.
 - Rewrote the README with a working truncation demo, Homebrew setup, global
   configuration, machine-readable output guidance, and resource-limit semantics.
 - Fixed a hang when the global configuration path is a FIFO or another
