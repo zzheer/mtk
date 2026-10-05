@@ -198,6 +198,8 @@ number of bytes or a size string such as `"32KiB"` or `"128KiB"`. `truncate`
 accepts a JSON boolean; `false` disables display clipping. Keys are optional.
 A missing config file uses 200 lines, 32 KiB, and truncation enabled. Invalid
 JSON or invalid settings exit nonzero before the wrapped command starts.
+Config must be a regular JSON file: FIFOs, devices, and other nonregular files
+are rejected before command execution; symlinks to regular files are allowed.
 CLI flags override the corresponding config settings: `--max-lines`,
 `--max-bytes`, and `--no-truncate`. Flags must precede the command. Resource
 limits remain separate CLI flags; this config controls output display only.

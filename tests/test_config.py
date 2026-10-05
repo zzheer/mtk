@@ -77,6 +77,52 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result.stdout, b'')
         self.assertIn(b'config', result.stderr)
 
+    def test_fifo_config_fails_without_blocking_before_governor(self):
+        os.mkfifo(self.config)
+        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+                                 'must-not-run'], env=self.env,
+                                capture_output=True, timeout=3)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b'expected a regular JSON file', result.stderr)
+
+    def test_symlink_to_regular_config_loads(self):
+        target = self.config.parent / 'config.target.json'
+        target.write_text(json.dumps({'max_lines': 1}))
+        os.symlink(target, self.config)
+        self.assertEqual(self.run_mtk().stdout, b'one\n[truncated by mtk]\n')
+
+    def test_dangling_symlink_config_keeps_defaults(self):
+        os.symlink(self.config.parent / 'missing.json', self.config)
+        self.assertEqual(self.run_mtk().stdout, b'one\ntwo\nthree\n')
+
+    def test_device_config_fails_before_governor(self):
+        os.symlink('/dev/null', self.config)
+        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+                                 'must-not-run'], env=self.env,
+                                capture_output=True, timeout=3)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b'expected a regular JSON file', result.stderr)
+
+    def test_directory_config_fails_before_governor(self):
+        self.config.mkdir()
+        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+                                 'must-not-run'], env=self.env,
+                                capture_output=True, timeout=3)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b'expected a regular JSON file', result.stderr)
+
+    def test_invalid_utf8_config_fails_before_governor(self):
+        self.config.write_bytes(b'{"max_lines": 1}\xff')
+        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+                                 'must-not-run'], env=self.env,
+                                capture_output=True, timeout=3)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b"codec can't decode", result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

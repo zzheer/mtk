@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Read global config as UTF-8 and cover symlink-to-regular success plus device
+  and FIFO rejection with a specific stderr assertion; invalid UTF-8 bytes fail
+  closed before the wrapped command. Directories and other nonregular paths are
+  rejected before wrapping the open descriptor.
+- Rewrote the README with a working truncation demo, Homebrew setup, global
+  configuration, machine-readable output guidance, and resource-limit semantics.
+- Fixed a hang when the global configuration path is a FIFO or another
+  nonregular file. MTK now rejects it before starting the wrapped command,
+  preserving bounded execution.
+- Clarified accepted configuration file types in the MTK guide and global
+  agent instructions, including support for symlinks to regular JSON files.
+
 ## 0.2.1 — 2026-10-04
 
 - Load global display defaults from `~/.config/mtk/config.json`, respecting
