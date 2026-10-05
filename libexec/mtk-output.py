@@ -32,10 +32,15 @@ def defaults():
     path = Path(directory) / "mtk/config.json"
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-        with os.fdopen(fd, encoding="utf-8") as file:
-            if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise ValueError("expected a regular JSON file")
-            contents = file.read(65537)
+            with os.fdopen(fd, encoding="utf-8") as file:
+                fd = -1
+                contents = file.read(65537)
+        finally:
+            if fd >= 0:
+                os.close(fd)
         if len(contents) > 65536:
             raise ValueError("file exceeds 64 Ki characters")
         config = json.loads(contents)

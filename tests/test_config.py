@@ -92,6 +92,10 @@ class ConfigTests(unittest.TestCase):
         os.symlink(target, self.config)
         self.assertEqual(self.run_mtk().stdout, b'one\n[truncated by mtk]\n')
 
+    def test_dangling_symlink_config_keeps_defaults(self):
+        os.symlink(self.config.parent / 'missing.json', self.config)
+        self.assertEqual(self.run_mtk().stdout, b'one\ntwo\nthree\n')
+
     def test_device_config_fails_before_governor(self):
         os.symlink('/dev/null', self.config)
         result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
@@ -101,12 +105,23 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result.stdout, b'')
         self.assertIn(b'expected a regular JSON file', result.stderr)
 
-    def test_invalid_utf8_config_fails_before_governor(self):
-        self.config.write_bytes(b'{"max_lines": 1}\xff')
-        result = self.run_mtk()
+    def test_directory_config_fails_before_governor(self):
+        self.config.mkdir()
+        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+                                 'must-not-run'], env=self.env,
+                                capture_output=True, timeout=3)
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, b'')
-        self.assertIn(b'config', result.stderr)
+        self.assertIn(b'expected a regular JSON file', result.stderr)
+
+    def test_invalid_utf8_config_fails_before_governor(self):
+        self.config.write_bytes(b'{"max_lines": 1}\xff')
+        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+                                 'must-not-run'], env=self.env,
+                                capture_output=True, timeout=3)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b'')
+        self.assertIn(b"codec can't decode", result.stderr)
 
 
 if __name__ == '__main__':
