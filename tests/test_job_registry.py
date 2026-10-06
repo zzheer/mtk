@@ -97,7 +97,8 @@ class JobsTests(unittest.TestCase):
         with patch.object(self.jobs, 'process_identity', side_effect=identities.get), \
              patch.object(self.jobs, 'process_table', return_value=table):
             tracker = self.jobs.Tracker(900001, ['sleep'], persist=False)
-            with patch.object(self.jobs.os, 'killpg') as group_signal, \
+            with patch.object(self.jobs.os, 'getpgid', side_effect=lambda pid: table[pid][1]), \
+                 patch.object(self.jobs.os, 'killpg') as group_signal, \
                  patch.object(self.jobs.os, 'kill') as individual_signal:
                 tracker.signal(signal.SIGINT)
                 group_signal.assert_called_once_with(900001, signal.SIGINT)
@@ -185,7 +186,7 @@ class JobsTests(unittest.TestCase):
         table = {900001: (1, 900001), 900002: (900001, 900001)}
         with patch.object(self.jobs, 'process_identity', side_effect=identities.get), patch.object(self.jobs, 'process_table', return_value=table):
             tracker = self.jobs.Tracker(900001, ['sleep'], persist=False)
-            with patch.object(self.jobs.os, 'killpg') as group_kill, patch.object(self.jobs.os, 'kill') as kill:
+            with patch.object(self.jobs.os, 'getpgid', side_effect=lambda pid: table[pid][1]), patch.object(self.jobs.os, 'killpg') as group_kill, patch.object(self.jobs.os, 'kill') as kill:
                 tracker.signal(signal.SIGTERM, {900001})
                 group_kill.assert_not_called()
                 kill.assert_called_once_with(900002, signal.SIGTERM)
@@ -223,7 +224,7 @@ class JobsTests(unittest.TestCase):
         reused = (os.getuid(), 2, 2)
         with patch.object(self.jobs, 'process_identity', return_value=identity), patch.object(self.jobs, 'process_table', return_value={900001: (1, 900001)}):
             tracker = self.jobs.Tracker(900001, ['sleep'], persist=False)
-            with patch.object(self.jobs, 'process_identity', side_effect=[identity, reused, reused]), patch.object(self.jobs.os, 'killpg') as group_kill, patch.object(self.jobs.os, 'kill') as kill:
+            with patch.object(self.jobs.os, 'getpgid', return_value=900001), patch.object(self.jobs, 'process_identity', side_effect=[identity, reused, reused]), patch.object(self.jobs.os, 'killpg') as group_kill, patch.object(self.jobs.os, 'kill') as kill:
                 tracker.signal(signal.SIGTERM)
                 group_kill.assert_not_called()
                 kill.assert_not_called()

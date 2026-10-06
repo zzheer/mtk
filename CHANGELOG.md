@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Keep emergency cleanup available when process discovery fails, restore
+  terminal settings even if finalization fails, and preserve termination
+  status when a forwarded signal interrupts the process snapshot itself.
 - Prepare Homebrew 0.3.1 from pinned public source `36e2994`, with the
   checksum derived from the exact served archive and installed job helpers.
 - Track current-user workloads with `mtk jobs` and terminate tracked workloads

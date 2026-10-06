@@ -222,6 +222,8 @@ registry, separate from singleton coordination; it uses no daemon.
 Before signaling, MTK checks each process's UID and high-resolution PID birth
 time. `stop --all` excludes unrelated processes, itself, and its ancestors.
 Cleanup sends TERM, then KILL to verified survivors within a bounded wait.
+Emergency signaling uses kernel group and identity checks independently of
+process snapshots; capture errors still restore terminal settings.
 
 MTK periodically captures descendants and retains observed surviving descendants
 after their root exits. Sampling can miss rapid detach/reparent operations

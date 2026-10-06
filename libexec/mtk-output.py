@@ -303,7 +303,6 @@ def execute(command, log, max_lines, max_bytes, truncate):
         if tracker:
             # Cleanup must not depend on the registry that may have failed.
             tracker.persist = False
-            tracker.refresh()
             tracker.signal(signal.SIGKILL)
         elif not completed():
             try:
@@ -317,16 +316,18 @@ def execute(command, log, max_lines, max_bytes, truncate):
                 os.waitpid(pid, 0)
         raise
     finally:
-        if tracker:
-            tracker.finish()
-        selector.close()
-        if saved_terminal is not None:
-            termios.tcsetattr(0, termios.TCSADRAIN, saved_terminal)
-        if master is not None:
-            os.close(master)
-        if child:
-            child.stdout.close()
-            child.stderr.close()
+        try:
+            if tracker:
+                tracker.finish()
+        finally:
+            selector.close()
+            if saved_terminal is not None:
+                termios.tcsetattr(0, termios.TCSADRAIN, saved_terminal)
+            if master is not None:
+                os.close(master)
+            if child:
+                child.stdout.close()
+                child.stderr.close()
 
 
 def main():
@@ -340,7 +341,7 @@ def main():
         fd, path = tempfile.mkstemp(prefix="mtk-", suffix=".log", dir="/tmp")
         with os.fdopen(fd, "wb", buffering=0) as log:
             code = execute(command, log, max_lines, max_bytes, truncate)
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         print(f"\nmtk: command capture failed: {exc}", file=sys.stderr)
         if path:
             print(f"mtk: incomplete log: {path}", file=sys.stderr)

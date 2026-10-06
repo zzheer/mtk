@@ -189,6 +189,8 @@ It is separate from singleton coordination and needs no daemon. Before
 signaling, MTK verifies the UID and high-resolution PID birth time. Cleanup
 excludes unrelated processes, the managing command, and its ancestors, sends
 TERM, then KILL to verified survivors, and waits only for a bounded interval.
+Emergency signaling uses kernel group and identity checks independently of
+process snapshots; capture errors still restore terminal settings.
 
 Descendants are captured periodically. Observed surviving descendants remain
 tracked after the root exits. Rapid detach/reparent between samples, or children

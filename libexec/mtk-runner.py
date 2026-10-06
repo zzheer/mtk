@@ -353,6 +353,7 @@ def main() -> None:
 
     started = time.monotonic()
     next_memory_check = started
+    tracking_failed = False
     try:
         while child.poll() is None and exit_reason is None:
             refresh_descendants()
@@ -380,9 +381,12 @@ def main() -> None:
         exit_code = child.wait()
     except BaseException:
         # Keep identity-checked cleanup available after a registry failure.
+        tracking_failed = True
         tracker.persist = False
-        stop_workload()
-        raise
+        tracker.signal(signal.SIGKILL)
+        exit_code = child.wait()
+        if exit_reason is None:
+            raise
     finally:
         if foreground is not None:
             set_foreground(foreground)
@@ -398,7 +402,8 @@ def main() -> None:
         if lock_fd is not None:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
-        tracker.finish()
+        if not tracking_failed:
+            tracker.finish()
 
     if exit_reason is not None:
         sys.exit(exit_reason)

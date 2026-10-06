@@ -169,7 +169,14 @@ class Tracker:
         return None
 
     def signal(self, sig, excluded=()):
-        table = process_table()
+        # Emergency signaling must remain available when ps discovery fails.
+        excluded = set(excluded)
+        table = {}
+        for pid in set(self.members) | excluded:
+            try:
+                table[pid] = (0, os.getpgid(pid))
+            except ProcessLookupError:
+                pass
         witness = self._group_witness(table, excluded)
         group_sent = False
         if witness and process_identity(witness[0]) == witness[1]:
