@@ -218,6 +218,7 @@ class OutputTests(unittest.TestCase):
     def test_help_exposes_output_and_governor_flags(self):
         result = subprocess.run([MTK, "--help"], capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotRegex(result.stdout, rb'(?m)^\s+proxy\s+')
         for flag in (b"--max-lines", b"--max-bytes", b"--no-truncate", b"--exclude-children"):
             self.assertIn(flag, result.stdout)
 

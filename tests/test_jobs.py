@@ -107,9 +107,11 @@ class JobsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
 
     def test_removed_proxy_command_fails_explicitly(self):
-        result = self.invoke('proxy', sys.executable, '-c', "print('MUST_NOT_RUN')")
-        self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertNotIn('MUST_NOT_RUN', result.stdout)
+        for prefix in ([], ['--verbose'], ['--ultra-compact'], ['help']):
+            with self.subTest(prefix=prefix):
+                result = self.invoke(*prefix, 'proxy', sys.executable, '-c', "print('MUST_NOT_RUN')")
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertNotIn('MUST_NOT_RUN', result.stdout)
 
     def test_stop_all_kills_resistant_workload_and_child_without_killing_unrelated_process(self):
         ready = self.folder / 'ready'

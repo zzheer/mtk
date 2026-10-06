@@ -11,6 +11,7 @@
 - Accept display limits alongside resource limits at the end of commands,
   and preserve last-value precedence before native RTK global options.
 - Remove the public `proxy` command; use automatic dispatch or `mtk run`.
+  Reject it behind native global flags and remove its inherited RTK help entry.
 - Limit CPU-heavy grandchildren on Darwin and reset CPU history on PID reuse.
   Document interference between independently nested CPU controllers.
 - Finish workload cleanup after live or initial job-record failures, and

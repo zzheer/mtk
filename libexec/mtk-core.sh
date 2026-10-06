@@ -26,7 +26,17 @@ mtk_core_run() {
     return 2
   fi
 
-  if [[ "$1" == "proxy" ]]; then
+  local subcommand="" help_target="" arg
+  for arg in "$@"; do
+    [[ "$arg" == -* ]] && continue
+    if [[ -z "$subcommand" ]]; then
+      subcommand="$arg"
+    else
+      help_target="$arg"
+      break
+    fi
+  done
+  if [[ "$subcommand" == "proxy" || ( "$subcommand" == "help" && "$help_target" == "proxy" ) ]]; then
     echo "mtk: proxy was removed; use 'mtk COMMAND ...' or 'mtk run COMMAND ...'." >&2
     return 2
   fi
@@ -53,7 +63,7 @@ mtk_core_run() {
     done
 
     if [[ $has_help -eq 1 ]]; then
-      command rtk "$@" | sed -e 's/rtk/mtk/g' -e 's/RTK/MTK/g'
+      command rtk "$@" | sed -e '/^[[:space:]]*proxy[[:space:]]/d' -e 's/rtk/mtk/g' -e 's/RTK/MTK/g'
     else
       command rtk "$@"
     fi
