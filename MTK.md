@@ -3,10 +3,9 @@
 Canonical public guide: <https://raw.githubusercontent.com/zzheer/mtk/refs/heads/preview/MTK.md>.
 
 Prefer Homebrew-installed `mtk`, resolved through PATH, for routine shell and
-terminal commands: `mtk COMMAND ... [resource limits]`. Use native handlers for
-Git, ripgrep, GitHub CLI, tests, and builds. Unknown commands automatically use
-the proxy path; routine `mtk just`, `mtk python3`, `mtk fd`, `mtk node`, and
-`mtk ssh` need no explicit `proxy`. Do not substitute a source-checkout wrapper.
+terminal commands: `mtk COMMAND ... [resource and display limits]`. Use native handlers for
+Git, ripgrep, GitHub CLI, tests, and builds. Unknown commands execute directly, preserving output and exit status within
+MTK limits; use `mtk just`, `mtk python3`, `mtk fd`, `mtk node`, and `mtk ssh`. Do not substitute a source-checkout wrapper.
 When unavailable or incompatible wrapping, filtered diagnostics, changed exit status, or wrapper
 limits block authorized work, run the underlying command directly. No additional
 permission is required solely to bypass MTK.
@@ -95,7 +94,7 @@ mtk log app.log # Deduplicated logs
 mtk curl <url> # Truncate + save full output
 mtk wget <url> # Download, strip progress bars
 mtk summary <cmd> [args...] # Direct argv execution + heuristic summary
-mtk run <cmd> [args...] # Raw direct execution (no filtering/tracking)
+mtk run <cmd> [args...] # Raw argv without RTK summaries; MTK logs/limits remain
 mtk run -c '<script>' # Shell string via sh (cmd on Windows)
 mtk run --shell fish -c '<script>' # Explicit shell for shell-specific syntax
 
@@ -121,7 +120,7 @@ mtk session # Show mtk adoption across recent sessions
 
 ## Resource Governance & Limits
 
-Append process constraints to any mtk, rtk, or implicitly proxied command:
+Append resource and display limits to the command:
 
 ```bash
 # Time limit (s, m, h)
@@ -144,9 +143,10 @@ mtk --singleton npm run dev  # Auto-derives lock key from command
 mtk --singleton-wait=deploy ./deploy.sh
 ```
 
-Only a final contiguous suffix of `--time-limit`, `--memory-limit` (alias
-`--mem-limit`), `--cpu-limit`, and `--exclude-children` is extracted. Value flags
-accept both separate values and `=VALUE`. Prefix resource flags still work.
+Only a final contiguous MTK flag suffix is extracted: `--time-limit`,
+`--memory-limit` (alias `--mem-limit`), `--cpu-limit`, `--exclude-children`,
+`--max-lines`, `--max-bytes`, and `--no-truncate`. Value flags accept both
+separate values and `=VALUE`. Legacy prefix flags still work.
 Duplicate limits use the last value, and suffix values override prefix values:
 
 ```bash
@@ -160,8 +160,40 @@ invocation and preserves the wrapped arguments:
 mtk python3 script.py -- --time-limit 30s # Passed through to the command
 ```
 
-Display flags (`--max-lines`, `--max-bytes`, `--no-truncate`) and singleton flags
-must precede the command.
+Keep trailing resource and display flags together at the end. Singleton flags
+remain prefix-only:
+
+```bash
+mtk python3 worker.py --time-limit 60s --max-lines 100 --cpu-limit 50
+```
+
+CPU limits include the full descendant-tree depth on Darwin by default.
+`--exclude-children` limits only the root process; timeout and memory cleanup
+still cover the workload and its descendants.
+
+Avoid nesting CPU-limited MTK commands: independent stop/resume controllers
+can interfere with each other. When running the governor test suite, apply
+`--exclude-children` to the outer test runner so each regression owns its CPU
+controller; retain the outer timeout and memory limits.
+
+## Device-local jobs
+
+```bash
+mtk jobs       # List this user's tracked workloads on this device
+mtk stop --all # Stop tracked workloads and observed descendants
+```
+
+The private registry lives under `$XDG_STATE_HOME/mtk/jobs`, or
+`~/.local/state/mtk/jobs` when unset, with `0700` directories and `0600` records.
+It is separate from singleton coordination and needs no daemon. Before
+signaling, MTK verifies the UID and high-resolution PID birth time. Cleanup
+excludes unrelated processes, the managing command, and its ancestors, sends
+TERM, then KILL to verified survivors, and waits only for a bounded interval.
+
+Descendants are captured periodically. Observed surviving descendants remain
+tracked after the root exits. Rapid detach/reparent between samples, or children
+born after observers exit, can escape observation; this is not an absolute
+guarantee of tracking every detached process.
 
 ## Conversion & MarkItDown
 
@@ -197,8 +229,8 @@ just audit # Audits Homebrew formula locally
 ## Output and logs
 
 ```bash
-mtk --max-lines 500 --max-bytes 128KiB git diff
-mtk --no-truncate python3 script.py
+mtk git diff --max-lines 500 --max-bytes 128KiB
+mtk python3 script.py --no-truncate
 ```
 
 Display settings load from `~/.config/mtk/config.json`. When `XDG_CONFIG_HOME` is
@@ -221,38 +253,38 @@ JSON or invalid settings exit nonzero before the wrapped command starts.
 Config must be a regular JSON file: FIFOs, devices, and other nonregular files
 are rejected before command execution; symlinks to regular files are allowed.
 CLI flags override the corresponding config settings: `--max-lines`,
-`--max-bytes`, and `--no-truncate`. Display flags must precede the command. Resource
+`--max-bytes`, and `--no-truncate`. Resource
 limits remain separate CLI flags; this config controls output display only.
 
 Defaults: 200 lines / 32 KiB per stream. Each MTK clipping region has exact
 `[truncated by mtk]`. Unique private `/tmp/mtk-*.log` contains complete wrapped
 output only; stdout/stderr bytes follow observed arrival order. The final
 filepath is on stderr. The log contains bytes after RTK processing: content RTK
-removed cannot be recovered. Display flags must precede the command;
-`--no-truncate` still logs output and prints the filepath.
+removed cannot be recovered. `--no-truncate` still logs output and prints the
+filepath. Display limits do not cap log size; manage retention and storage
+separately.
 
 Codex resolves Homebrew `/opt/homebrew/bin/mtk` through PATH. Existing hooks
 need not be enabled; verify `command -v mtk` and `mtk --help` from its shell.
 
 ## Advanced exact output
 
-Use `mtk proxy COMMAND ...` when you need to bypass a native handler's RTK
-summary while retaining MTK logging and resource limits. For complete displayed
-bytes, put `--no-truncate` before `proxy`:
+Use `mtk run COMMAND ...` to bypass a native handler's RTK summary while
+retaining MTK logging and resource limits. For complete displayed bytes:
 
 ```bash
-mtk --no-truncate proxy git diff --time-limit 30s
+mtk run git diff --no-truncate --time-limit 30s
 ```
 
-Explicit `proxy` avoids RTK summarization. The stderr log filepath footer still
-prints. The advanced aliases `mp = mtk proxy` and `mr = mtk run` remain available.
+The stderr log filepath footer still prints. `mp` aliases `mtk`; `mr` aliases
+`mtk run`.
 
 ## Preferences
 
 Prefer `mtk bun` for everyday tasks when Bun is appropriate.
 Prefer `mtk fd` over `find`. Prefer `mtk rg` over `grep`.
 Any unknown command not recognized as an internal mtk or native rtk subcommand
-automatically falls back to the proxy path.
+executes directly with its output and exit status preserved within MTK limits.
 
 # Aliases
 
@@ -264,7 +296,7 @@ mpj = mtk just
 mpnpm = mtk pnpm
 mgh = mtk gh
 mgit = mtk git
-mp = mtk proxy
+mp = mtk
 mb = mtk bun
 mpn = mtk node
 mpd = mtk pnpm dlx
@@ -273,3 +305,5 @@ mnpm = mtk npm
 mnpx = mtk npx
 mssh = mtk ssh
 mmd = mtk markitdown
+
+mpp = mtk python3 # Standalone Python shortcut

@@ -2,11 +2,25 @@
 
 ## Unreleased
 
+- Track current-user workloads with `mtk jobs` and terminate tracked workloads
+  and observed descendants with `mtk stop --all`, using private records and
+  UID/birth-time checks before signaling. Retain observed orphans; document
+  polling limitations.
+- Accept display limits alongside resource limits at the end of commands,
+  and preserve last-value precedence before native RTK global options.
+- Remove the public `proxy` command; use automatic dispatch or `mtk run`.
+- Limit CPU-heavy grandchildren on Darwin and reset CPU history on PID reuse.
+  Document interference between independently nested CPU controllers.
+- Finish workload cleanup after live or initial job-record failures, and
+  preserve forwarded TERM status during escalation without forcing SIGINT
+  handlers to terminate.
+- Package the job registry helper through the shared installation manifest;
+  exercise installed helpers and management commands in Homebrew tests.
 - Accept time, memory, and CPU limits as a final command suffix while preserving
   native RTK dispatch, prefix syntax, and last-value precedence. Use `--` after
   the command to protect tool-owned flags from suffix extraction.
 - Route everyday aliases and Python helpers through automatic dispatch, and
-  document command-first limits while retaining explicit exact-output passthrough.
+  document command-first limits with explicit `run` dispatch.
 - Read global config as UTF-8 and cover symlink-to-regular success plus device
   and FIFO rejection with a specific stderr assertion; invalid UTF-8 bytes fail
   closed before the wrapped command. Directories and other nonregular paths are

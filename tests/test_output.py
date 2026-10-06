@@ -35,7 +35,7 @@ class ResourceSuffixTests(unittest.TestCase):
             "args = sys.argv[1:]\n"
             "if args[0] == '--verbose':\n"
             "    args = args[1:]\n"
-            "if args[0] == 'proxy':\n"
+            "if args[0] in ('proxy', 'run'):\n"
             "    os.execvp(args[1], args[1:])\n"
             "print(json.dumps(sys.argv[1:]))\n")
         stub.chmod(0o755)
@@ -100,8 +100,8 @@ class ResourceSuffixTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), args)
 
-    def test_explicit_proxy_and_one_log_preserve_exit_status(self):
-        result = self.invoke(["proxy", sys.executable, "-c",
+    def test_automatic_dispatch_and_one_log_preserve_exit_status(self):
+        result = self.invoke([sys.executable, "-c",
             "import sys; print('bounded'); sys.exit(7)", "--time-limit=2s"])
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertEqual(result.stdout, b"bounded\n")
@@ -114,7 +114,7 @@ class ResourceSuffixTests(unittest.TestCase):
         with mock.patch.dict(os.environ, self.env):
             command, _, _, _ = output.options(["mtk", "--cpu-limit", "25", "git", "diff",
                 "--cpu-limit=50", "--exclude-children"])
-        self.assertEqual(command, ["mtk", "--cpu-limit", "25", "--cpu-limit=50",
+        self.assertEqual(command, ["mtk", "--cpu-limit", "25", "--cpu-limit", "50",
             "--exclude-children", "git", "diff"])
 
     def test_prefix_command_separator_allows_suffix(self):
@@ -128,7 +128,7 @@ class ResourceSuffixTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout), ["--verbose", "git", "diff"])
 
     def test_suffix_overrides_prefix_limit_before_native_global_flags(self):
-        result = self.invoke(["--time-limit", "3s", "--verbose", "proxy", sys.executable,
+        result = self.invoke(["--time-limit", "3s", "--verbose", "run", sys.executable,
             "-c", "import time; time.sleep(1.5); print('MUST_NOT_COMPLETE')", "--time-limit=0.2s"])
         self.assertEqual(result.returncode, 124, result.stderr)
         self.assertNotIn(b"MUST_NOT_COMPLETE", result.stdout)
@@ -141,10 +141,49 @@ class ResourceSuffixTests(unittest.TestCase):
 
 
 class OutputTests(unittest.TestCase):
+    def test_forwarded_sigint_does_not_kill_a_command_that_handles_it(self):
+        stderr = b''
+        command = subprocess.Popen([MTK, sys.executable, '-c',
+            "import signal,time; signal.signal(signal.SIGINT, lambda *_: None); "
+            "print('READY',flush=True); time.sleep(1.5); print('DONE')"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.assertEqual(command.stdout.readline(), b'READY\n')
+            command.send_signal(signal.SIGINT)
+            stdout, stderr = command.communicate(timeout=5)
+            self.assertEqual(command.returncode, 0, stderr)
+            self.assertEqual(stdout, b'DONE\n')
+        finally:
+            if command.poll() is None:
+                command.kill()
+                command.wait(timeout=3)
+            for match in re.findall(rb'(?m)^(/tmp/mtk-[^\r\n]+\.log)\r?$', stderr):
+                Path(os.fsdecode(match)).unlink(missing_ok=True)
+
+    def test_forwarded_sigterm_preserves_status_after_governor_cleanup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            command = subprocess.Popen([MTK, sys.executable, '-c',
+                "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                "print('READY',flush=True); time.sleep(10)", '--time-limit', '8s'],
+                env={**os.environ, 'XDG_STATE_HOME': folder},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stderr = b''
+            try:
+                self.assertEqual(command.stdout.readline(), b'READY\n')
+                command.send_signal(signal.SIGTERM)
+                _, stderr = command.communicate(timeout=5)
+                self.assertEqual(command.returncode, 143, stderr)
+            finally:
+                if command.poll() is None:
+                    command.kill()
+                    command.wait(timeout=3)
+                for match in re.findall(rb'(?m)^(/tmp/mtk-[^\r\n]+\.log)\r?$', stderr):
+                    Path(os.fsdecode(match)).unlink(missing_ok=True)
+
     def test_governed_terminal_has_controlling_tty_and_resize(self):
         pid, fd = pty.fork()
         if pid == 0:
-            os.execv(MTK, [MTK, "--time-limit", "4s", "proxy", sys.executable, "-c",
+            os.execv(MTK, [MTK, "--time-limit", "4s", sys.executable, "-c",
                 "import signal,time; f=open('/dev/tty'); signal.signal(signal.SIGWINCH,lambda *_: print('RESIZED',flush=True)); print('READY',flush=True); time.sleep(1)"])
         output = bytearray()
         resized = False
@@ -184,7 +223,7 @@ class OutputTests(unittest.TestCase):
 
     def run_mtk(self, script, flags=()):
         result = subprocess.run(
-            [MTK, *flags, "proxy", sys.executable, "-c", script],
+            [MTK, *flags, sys.executable, "-c", script],
             capture_output=True, timeout=15,
         )
         match = re.search(rb"(?m)^(/tmp/mtk-[^\r\n]+\.log)\r?$", result.stderr)
@@ -253,7 +292,7 @@ class OutputTests(unittest.TestCase):
 
     def test_invalid_limits_are_rejected(self):
         for flag, value in (("--max-lines", "0"), ("--max-bytes", "-1")):
-            result = subprocess.run([MTK, flag, value, "proxy", "echo", "must-not-run"],
+            result = subprocess.run([MTK, flag, value, "echo", "must-not-run"],
                 capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 2)
             self.assertNotIn(b"must-not-run", result.stdout)
@@ -266,7 +305,7 @@ class OutputTests(unittest.TestCase):
     def test_terminal_child_keeps_tty_and_accepts_stdin(self):
         pid, fd = pty.fork()
         if pid == 0:
-            os.execv(MTK, [MTK, "proxy", sys.executable, "-c",
+            os.execv(MTK, [MTK, sys.executable, "-c",
                 "import os; print('TTY',os.isatty(0),os.isatty(1),flush=True); print(input(),flush=True)"])
         self.addCleanup(os.close, fd)
         try:

@@ -173,7 +173,10 @@ void update_process_group(struct process_group *pgroup)
 			else
 			{
 				assert(tmp_process.pid == p->pid);
-				assert(tmp_process.starttime == p->starttime);
+				if (tmp_process.starttime != p->starttime) {
+					memcpy(p, &tmp_process, sizeof(*p));
+					p->cpu_usage = -1;
+				}
 				add_elem(pgroup->proclist, p);
 				if (dt < MIN_DT) continue;
 				//process exists. update CPU usage

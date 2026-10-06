@@ -107,6 +107,18 @@ static int get_process_pti(pid_t pid, struct proc_taskallinfo *ti) {
 	return 0;
 }
 
+static int descendant_of(pid_t parent, pid_t root) {
+	for (int depth = 0; depth < 1024 && parent > 1; depth++) {
+		if (parent == root) return 1;
+		struct proc_taskallinfo ancestor;
+		if (get_process_pti(parent, &ancestor) != 0) return 0;
+		pid_t next = ancestor.pbsd.pbi_ppid;
+		if (next == parent) return 0;
+		parent = next;
+	}
+	return 0;
+}
+
 int get_next_process(struct process_iterator *it, struct process *p) {
 	if (it->i == it->count) return -1;
 	if (it->filter->pid != 0 && !it->filter->include_children) {
@@ -133,7 +145,7 @@ int get_next_process(struct process_iterator *it, struct process *p) {
 			it->i++;
 			if (p->pid != it->pidlist[it->i - 1]) // I don't know why this can happen
 				continue;
-			if (p->pid != it->filter->pid && p->ppid != it->filter->pid)
+			if (p->pid != it->filter->pid && !descendant_of(p->ppid, it->filter->pid))
 				continue;
 			return 0;
 		}

@@ -24,7 +24,7 @@ class AliasTests(unittest.TestCase):
 
     def check_shells(self, aliases):
         names = ("mpf", "mpj", "mpn", "mssh", "mpp", "mp", "mr", "mgit", "mrg")
-        commands = ("fd", "just", "node", "ssh", "python3", "proxy", "run", "git", "rg")
+        commands = ("fd", "just", "node", "ssh", "python3", None, "run", "git", "rg")
         arguments = ["space value", "", "--time-limit", "2s"]
         for shell in ("bash", "zsh"):
             with self.subTest(shell=shell):
@@ -35,7 +35,7 @@ class AliasTests(unittest.TestCase):
                     env=self.env, capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual([json.loads(line) for line in result.stdout.splitlines()],
-                    [[command, *arguments] for command in commands])
+                    [[*([command] if command else []), *arguments] for command in commands])
 
     def test_shared_aliases_use_automatic_dispatch_in_bash_and_zsh(self):
         self.check_shells(ROOT / "share/mtk/mtk-aliases.sh")
@@ -44,7 +44,7 @@ class AliasTests(unittest.TestCase):
         # Minimal fixture exercises the fallback without a second Git checkout.
         (self.folder / "bin").mkdir()
         (self.folder / "libexec").mkdir()
-        for path in ("bin/mtk", "libexec/mtk-output.py", "libexec/mtk-runner.py"):
+        for path in ("bin/mtk", "libexec/mtk-output.py", "libexec/mtk-runner.py", "libexec/mtk_jobs.py"):
             shutil.copy2(ROOT / path, self.folder / path)
         result = subprocess.run([str(self.folder / "bin/mtk"), "env"],
             env=self.env, capture_output=True, timeout=10)

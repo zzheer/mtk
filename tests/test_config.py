@@ -20,7 +20,7 @@ class ConfigTests(unittest.TestCase):
         self.env = {**os.environ, 'XDG_CONFIG_HOME': self.temp.name}
 
     def run_mtk(self, flags=()):
-        result = subprocess.run([MTK, *flags, 'proxy', sys.executable, '-c',
+        result = subprocess.run([MTK, *flags, sys.executable, '-c',
                                  "print('one\\ntwo\\nthree')"],
                                 env=self.env, capture_output=True, timeout=10)
         match = re.search(rb'(?m)^(/tmp/mtk-[^\r\n]+\.log)$', result.stderr)
@@ -79,7 +79,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_fifo_config_fails_without_blocking_before_governor(self):
         os.mkfifo(self.config)
-        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+        result = subprocess.run([MTK, '--time-limit', '1s', 'echo',
                                  'must-not-run'], env=self.env,
                                 capture_output=True, timeout=3)
         self.assertEqual(result.returncode, 2)
@@ -98,7 +98,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_device_config_fails_before_governor(self):
         os.symlink('/dev/null', self.config)
-        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+        result = subprocess.run([MTK, '--time-limit', '1s', 'echo',
                                  'must-not-run'], env=self.env,
                                 capture_output=True, timeout=3)
         self.assertEqual(result.returncode, 2)
@@ -107,7 +107,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_directory_config_fails_before_governor(self):
         self.config.mkdir()
-        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+        result = subprocess.run([MTK, '--time-limit', '1s', 'echo',
                                  'must-not-run'], env=self.env,
                                 capture_output=True, timeout=3)
         self.assertEqual(result.returncode, 2)
@@ -116,7 +116,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_invalid_utf8_config_fails_before_governor(self):
         self.config.write_bytes(b'{"max_lines": 1}\xff')
-        result = subprocess.run([MTK, '--time-limit', '1s', 'proxy', 'echo',
+        result = subprocess.run([MTK, '--time-limit', '1s', 'echo',
                                  'must-not-run'], env=self.env,
                                 capture_output=True, timeout=3)
         self.assertEqual(result.returncode, 2)

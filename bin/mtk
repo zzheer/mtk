@@ -131,12 +131,17 @@ if [[ $has_governor -eq 1 ]]; then
   exec "$PYTHON_BIN" "$LIBEXEC_DIR/mtk-runner.py" "${runner_args[@]}" -- "$BIN_DIR/mtk" "$@"
 fi
 
-# Display/singleton options precede the command; resource limits also allow a suffix.
+# Management commands are captured without registering a new workload.
+if [[ "${1:-}" == "jobs" || "${1:-}" == "stop" ]]; then
+  exec "$PYTHON_BIN" "$LIBEXEC_DIR/mtk_jobs.py" "$@"
+fi
+
+# Prefer command-first syntax with trailing MTK limits.
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<'EOF'
-Usage: mtk [OPTIONS] COMMAND [ARGS] [RESOURCE LIMITS]
-Display and singleton options precede COMMAND. Resource limits also work
-as a final block after ARGS; the last value wins, including over prefix limits.
+Usage: mtk COMMAND [ARGS] [MTK LIMITS]
+Resource and display limits work as a final block after ARGS. Legacy prefix
+options remain supported; final values override prefix values.
 A standalone -- after COMMAND preserves wrapped arguments without extraction.
 
 MTK output and resource options:
@@ -149,6 +154,10 @@ MTK output and resource options:
   --exclude-children    Apply CPU limit to root process only
   --singleton[=NAME]    Replace previous workload with same name
   --singleton-wait[=NAME] Wait for previous workload
+
+Workload management:
+  jobs                  List this user's tracked MTK workloads on this device
+  stop --all            Terminate tracked workloads and descendants
 
 Defaults read from $XDG_CONFIG_HOME/mtk/config.json or ~/.config/mtk/config.json.
 JSON keys: max_lines, max_bytes, truncate. CLI output flags override settings.
@@ -174,7 +183,7 @@ alias mpj='mtk just'
 alias mpnpm='mtk pnpm'
 alias mgh='mtk gh'
 alias mgit='mtk git'
-alias mp='mtk proxy'
+alias mp='mtk'
 alias mb='mtk bun'
 alias mpn='mtk node'
 alias mpd='mtk pnpm dlx'
@@ -265,11 +274,11 @@ fi
 if [[ "${1:-}" == "markitdown" || "${1:-}" == "md" ]]; then
   shift
   if command -v markitdown >/dev/null 2>&1; then
-    exec rtk proxy markitdown "$@"
+    exec markitdown "$@"
   elif command -v uvx >/dev/null 2>&1; then
-    exec rtk proxy uvx markitdown "$@"
+    exec uvx markitdown "$@"
   elif [[ -n "$PYTHON_BIN" ]] && "$PYTHON_BIN" -c "import markitdown" >/dev/null 2>&1; then
-    exec rtk proxy "$PYTHON_BIN" -m markitdown "$@"
+    exec "$PYTHON_BIN" -m markitdown "$@"
   else
     echo "mtk markitdown: 'markitdown' is not installed." >&2
     echo "Install it via: uv tool install markitdown  (or: pip install markitdown)" >&2
@@ -391,7 +400,7 @@ case "${1:-}" in
     ;;
 esac
 
-# Core command execution via rtk / libexec helper with proxy fallback
+# Core command execution via native RTK handlers or direct argv dispatch.
 if [[ -f "$LIBEXEC_DIR/mtk-core.sh" ]]; then
   # shellcheck source=/dev/null
   source "$LIBEXEC_DIR/mtk-core.sh"
@@ -413,6 +422,6 @@ else
   if [[ $has_help -eq 1 ]]; then
     command rtk "$@" | sed -e 's/rtk/mtk/g' -e 's/RTK/MTK/g'
   else
-    command rtk proxy "$@"
+    command "$@"
   fi
 fi

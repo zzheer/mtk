@@ -13,11 +13,15 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import termios
 import tty
 
 import importlib.util
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mtk_jobs import Tracker, prepare_state
 
 
 runner_spec = importlib.util.spec_from_file_location("mtk_runner_sizes", Path(__file__).with_name("mtk-runner.py"))
@@ -26,6 +30,7 @@ runner_spec.loader.exec_module(runner_sizes)
 parse_bytes = runner_sizes.parse_bytes
 MARKER = b"[truncated by mtk]\n"
 RESOURCE_VALUE_FLAGS = {"--time-limit", "--memory-limit", "--mem-limit", "--cpu-limit"}
+DISPLAY_VALUE_FLAGS = {"--max-lines", "--max-bytes"}
 
 
 def defaults():
@@ -79,13 +84,13 @@ def resource_suffix(args):
     while end > 1:
         arg = args[end - 1]
         flag, equal, value = arg.partition("=")
-        if arg == "--exclude-children":
+        if arg in {"--exclude-children", "--no-truncate"}:
             end -= 1
-        elif flag in RESOURCE_VALUE_FLAGS:
+        elif flag in RESOURCE_VALUE_FLAGS | DISPLAY_VALUE_FLAGS:
             if not equal or not value:
                 raise ValueError(f"{flag} requires a value")
             end -= 1
-        elif end > 2 and args[end - 2] in RESOURCE_VALUE_FLAGS:
+        elif end > 2 and args[end - 2] in RESOURCE_VALUE_FLAGS | DISPLAY_VALUE_FLAGS:
             if not arg:
                 raise ValueError(f"{args[end - 2]} requires a value")
             end -= 2
@@ -96,14 +101,14 @@ def resource_suffix(args):
 
 def options(argv):
     max_lines, max_bytes, truncate = defaults()
-    command = [argv[0]]
-    rest = argv[1:]
+    resources, globals_, wrapped = [], [], []
+    rest = list(argv[1:])
     value_flags = RESOURCE_VALUE_FLAGS | {"--singleton-name"}
-    limit_position = None
+    suffix = False
     while rest:
         arg = rest.pop(0)
         flag, equal, value = arg.partition("=")
-        if flag in ("--max-lines", "--max-bytes"):
+        if flag in DISPLAY_VALUE_FLAGS:
             if not equal:
                 if not rest:
                     raise ValueError(f"{flag} requires a value")
@@ -118,24 +123,26 @@ def options(argv):
                     raise ValueError("--max-bytes must be positive")
         elif arg == "--no-truncate":
             truncate = False
-        else:
-            if arg in value_flags:
+        elif flag in value_flags:
+            if not equal:
                 if not rest:
-                    raise ValueError(f"{arg} requires a value")
-                command.extend((arg, rest.pop(0)))
-            elif not arg.startswith("-") or arg == "--":
-                wrapped, limits = resource_suffix(rest if arg == "--" else [arg, *rest])
-                position = len(command) if limit_position is None else limit_position
-                command[position:position] = limits
-                if arg == "--":
-                    command.append(arg)
-                command.extend(wrapped)
-                break
-            else:
-                if (limit_position is None and arg != "--exclude-children"
-                        and flag not in RESOURCE_VALUE_FLAGS | {"--singleton", "--singleton-wait"}):
-                    limit_position = len(command)
-                command.append(arg)
+                    raise ValueError(f"{flag} requires a value")
+                value = rest.pop(0)
+            if not value:
+                raise ValueError(f"{flag} requires a value")
+            resources.extend((flag, value))
+        elif arg == "--exclude-children" or flag in {"--singleton", "--singleton-wait"}:
+            resources.append(arg)
+        elif not arg.startswith("-") or arg == "--":
+            if suffix:
+                raise ValueError(f"unexpected MTK option: {arg}")
+            wrapped, rest = resource_suffix(rest if arg == "--" else [arg, *rest])
+            if arg == "--":
+                globals_.append(arg)
+            suffix = True
+        else:
+            globals_.append(arg)
+    command = [argv[0], *resources, *globals_, *wrapped]
     return command, max_lines, max_bytes, truncate
 
 
@@ -181,13 +188,28 @@ class Display:
 
 
 def execute(command, log, max_lines, max_bytes, truncate):
+    # Management commands are captured but never registered as workloads.
+    index = 1
+    while index < len(command) and command[index].startswith("-"):
+        flag, equal, _ = command[index].partition("=")
+        index += 2 if flag in RESOURCE_VALUE_FLAGS | {"--singleton-name"} and not equal else 1
+    management = index < len(command) and command[index] in {"jobs", "stop"}
+    if not management:
+        prepare_state()
     terminal = all(os.isatty(fd) for fd in (0, 1, 2))
     env = {**os.environ, "MTK_OUTPUT_INTERNAL": "1"}
+    env["MTK_JOB_CAPTURED"] = "1"
     env.pop("MTK_OUTPUT_TTY", None)
     selector = selectors.DefaultSelector()
     saved_terminal = None
     child = None
     master = None
+    tracker = None
+    pending_signal = None
+    stop_deadline = None
+    termination_signal = None
+    forced_status = None
+    status = None
     if terminal:
         env["MTK_OUTPUT_TTY"] = "1"
         pid, master = pty.fork()
@@ -214,16 +236,50 @@ def execute(command, log, max_lines, max_bytes, truncate):
         selector.register(child.stderr, selectors.EVENT_READ, Display(sys.stderr.buffer, max_lines, max_bytes, truncate))
 
     def forward(sig, frame):
-        try:
-            os.killpg(pid, sig)
-        except ProcessLookupError:
-            pass
+        nonlocal pending_signal
+        pending_signal = sig
+
+    def completed():
+        nonlocal status
+        if status is None:
+            if child:
+                status = child.poll()
+            else:
+                waited, code = os.waitpid(pid, os.WNOHANG)
+                if waited:
+                    status = os.waitstatus_to_exitcode(code)
+        return status is not None
 
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, forward)
     try:
-        while any(key.data is not None for key in selector.get_map().values()):
-            for key, _ in selector.select():
+        if not management:
+            tracker = Tracker(pid, command[1:], persist=False)
+            tracker.persist = True
+        while (any(key.data is not None for key in selector.get_map().values())
+               or not completed() or stop_deadline is not None):
+            if tracker:
+                tracker.refresh()
+            if pending_signal is not None:
+                forwarded_signal = pending_signal
+                if tracker:
+                    tracker.signal(pending_signal)
+                else:
+                    try:
+                        os.kill(pid, pending_signal)
+                    except ProcessLookupError:
+                        pass
+                pending_signal = None
+                if forwarded_signal != signal.SIGINT:
+                    termination_signal = forwarded_signal
+                    stop_deadline = time.monotonic() + 1
+            if stop_deadline is not None and time.monotonic() >= stop_deadline:
+                if not completed():
+                    forced_status = 128 + termination_signal
+                if tracker:
+                    tracker.signal(signal.SIGKILL)
+                stop_deadline = None
+            for key, _ in selector.select(timeout=0.1):
                 try:
                     data = os.read(key.fd, 65536)
                 except OSError as exc:
@@ -242,18 +298,27 @@ def execute(command, log, max_lines, max_bytes, truncate):
                 else:
                     key.data.write(b"", final=True)
                     selector.unregister(key.fileobj)
-        return child.wait() if child else os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+        return forced_status if forced_status is not None else status
     except BaseException:
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        if child:
-            child.wait()
-        else:
-            os.waitpid(pid, 0)
+        if tracker:
+            # Cleanup must not depend on the registry that may have failed.
+            tracker.persist = False
+            tracker.refresh()
+            tracker.signal(signal.SIGKILL)
+        elif not completed():
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not completed():
+            if child:
+                child.wait()
+            else:
+                os.waitpid(pid, 0)
         raise
     finally:
+        if tracker:
+            tracker.finish()
         selector.close()
         if saved_terminal is not None:
             termios.tcsetattr(0, termios.TCSADRAIN, saved_terminal)
@@ -275,7 +340,7 @@ def main():
         fd, path = tempfile.mkstemp(prefix="mtk-", suffix=".log", dir="/tmp")
         with os.fdopen(fd, "wb", buffering=0) as log:
             code = execute(command, log, max_lines, max_bytes, truncate)
-    except OSError as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"\nmtk: command capture failed: {exc}", file=sys.stderr)
         if path:
             print(f"mtk: incomplete log: {path}", file=sys.stderr)
