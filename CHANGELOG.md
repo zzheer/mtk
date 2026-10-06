@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Prepare Homebrew 0.3.0 from pinned public source `94630c1`, with the
+- Prepare Homebrew 0.3.1 from pinned public source `36e2994`, with the
   checksum derived from the exact served archive and installed job helpers.
 - Track current-user workloads with `mtk jobs` and terminate tracked workloads
   and observed descendants with `mtk stop --all`, using private records and
