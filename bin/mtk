@@ -131,10 +131,15 @@ if [[ $has_governor -eq 1 ]]; then
   exec "$PYTHON_BIN" "$LIBEXEC_DIR/mtk-runner.py" "${runner_args[@]}" -- "$BIN_DIR/mtk" "$@"
 fi
 
-# MTK options precede the command; command-specific help remains RTK help.
+# Display/singleton options precede the command; resource limits also allow a suffix.
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<'EOF'
-MTK output and resource options (before COMMAND):
+Usage: mtk [OPTIONS] COMMAND [ARGS] [RESOURCE LIMITS]
+Display and singleton options precede COMMAND. Resource limits also work
+as a final block after ARGS; the last value wins, including over prefix limits.
+A standalone -- after COMMAND preserves wrapped arguments without extraction.
+
+MTK output and resource options:
   --max-lines N         Display at most N lines per stream (default: 200)
   --max-bytes SIZE      Display at most SIZE bytes per stream (default: 32KiB)
   --no-truncate         Display all wrapped output; still write complete log
@@ -162,23 +167,23 @@ if [[ "${1:-}" == "env" || "${1:-}" == "init" ]]; then
   else
     cat <<'EOF'
 alias mr='mtk run'
-alias mpf='mtk proxy fd'
+alias mpf='mtk fd'
 alias mrg='mtk rg'
 alias md='mtk docker'
-alias mpj='mtk proxy just'
+alias mpj='mtk just'
 alias mpnpm='mtk pnpm'
 alias mgh='mtk gh'
 alias mgit='mtk git'
 alias mp='mtk proxy'
 alias mb='mtk bun'
-alias mpn='mtk proxy node'
+alias mpn='mtk node'
 alias mpd='mtk pnpm dlx'
 alias mpe='mtk pnpm exec'
 alias mnpm='mtk npm'
 alias mnpx='mtk npx'
-alias mssh='mtk proxy ssh'
+alias mssh='mtk ssh'
 alias mmd='mtk markitdown'
-mpp() { mtk proxy python3 "$@"; }
+mpp() { mtk python3 "$@"; }
 EOF
     exit 0
   fi

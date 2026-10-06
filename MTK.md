@@ -3,9 +3,11 @@
 Canonical public guide: <https://raw.githubusercontent.com/zzheer/mtk/refs/heads/preview/MTK.md>.
 
 Prefer Homebrew-installed `mtk`, resolved through PATH, for routine shell and
-terminal commands. Use `mtk proxy` when it preserves command behavior and useful
-diagnostics. Do not substitute a source-checkout wrapper. When unavailable or
-incompatible wrapping, filtered diagnostics, changed exit status, or wrapper
+terminal commands: `mtk COMMAND ... [resource limits]`. Use native handlers for
+Git, ripgrep, GitHub CLI, tests, and builds. Unknown commands automatically use
+the proxy path; routine `mtk just`, `mtk python3`, `mtk fd`, `mtk node`, and
+`mtk ssh` need no explicit `proxy`. Do not substitute a source-checkout wrapper.
+When unavailable or incompatible wrapping, filtered diagnostics, changed exit status, or wrapper
 limits block authorized work, run the underlying command directly. No additional
 permission is required solely to bypass MTK.
 
@@ -18,7 +20,7 @@ mtk ls . # Compact directory tree
 mtk read file.rs # Smart file reading
 mtk read file.rs -l aggressive # Signatures only (strips bodies)
 mtk smart file.rs # 2-line heuristic code summary
-mtk proxy fd
+mtk fd
 mtk diff file1 file2 # Condensed diff (exit 0: identical, 1: different, 2: read error)
 mtk rg Compact ripgrep - runs rg natively, same output filter as grep
 mtk ast-grep Compact ast-grep - runs ast-grep natively, groups matches by file
@@ -96,7 +98,6 @@ mtk summary <cmd> [args...] # Direct argv execution + heuristic summary
 mtk run <cmd> [args...] # Raw direct execution (no filtering/tracking)
 mtk run -c '<script>' # Shell string via sh (cmd on Windows)
 mtk run --shell fish -c '<script>' # Explicit shell for shell-specific syntax
-mtk proxy <command> # Raw passthrough + tracking
 
 ## Others
 
@@ -120,20 +121,20 @@ mtk session # Show mtk adoption across recent sessions
 
 ## Resource Governance & Limits
 
-Apply process constraints to any mtk, rtk, or proxied command:
+Append process constraints to any mtk, rtk, or implicitly proxied command:
 
 ```bash
 # Time limit (s, m, h)
-mtk --time-limit 30s npm test
-mtk --time-limit 5m cargo build
+mtk npm test --time-limit 30s
+mtk cargo build --time-limit=5m
 
 # Memory limit (RSS polling every 500ms)
-mtk --memory-limit 2G python3 data_processor.py
-mtk --memory-limit 500M node script.js
+mtk python3 data_processor.py --memory-limit 2G
+mtk node script.js --mem-limit=500M
 
 # CPU throttling (bundled corrected limiter; children included by default)
-mtk --cpu-limit 50% ffmpeg -i input.mp4 output.mp4
-mtk --cpu-limit 50 --exclude-children proxy python3 script.py
+mtk ffmpeg -i input.mp4 output.mp4 --cpu-limit 50%
+mtk python3 script.py --cpu-limit=50 --exclude-children
 
 # Singleton (terminates previous instance with up to 5 retries)
 mtk --singleton=server_sync ./sync.sh
@@ -142,6 +143,25 @@ mtk --singleton npm run dev  # Auto-derives lock key from command
 # Singleton Wait (blocks until existing instance finishes)
 mtk --singleton-wait=deploy ./deploy.sh
 ```
+
+Only a final contiguous suffix of `--time-limit`, `--memory-limit` (alias
+`--mem-limit`), `--cpu-limit`, and `--exclude-children` is extracted. Value flags
+accept both separate values and `=VALUE`. Prefix resource flags still work.
+Duplicate limits use the last value, and suffix values override prefix values:
+
+```bash
+mtk --time-limit 60s cargo build --time-limit 30s # MTK uses 30s
+```
+
+A standalone `--` anywhere after `COMMAND` disables suffix extraction for that
+invocation and preserves the wrapped arguments:
+
+```bash
+mtk python3 script.py -- --time-limit 30s # Passed through to the command
+```
+
+Display flags (`--max-lines`, `--max-bytes`, `--no-truncate`) and singleton flags
+must precede the command.
 
 ## Conversion & MarkItDown
 
@@ -178,7 +198,7 @@ just audit # Audits Homebrew formula locally
 
 ```bash
 mtk --max-lines 500 --max-bytes 128KiB git diff
-mtk --no-truncate proxy python3 script.py
+mtk --no-truncate python3 script.py
 ```
 
 Display settings load from `~/.config/mtk/config.json`. When `XDG_CONFIG_HOME` is
@@ -201,40 +221,55 @@ JSON or invalid settings exit nonzero before the wrapped command starts.
 Config must be a regular JSON file: FIFOs, devices, and other nonregular files
 are rejected before command execution; symlinks to regular files are allowed.
 CLI flags override the corresponding config settings: `--max-lines`,
-`--max-bytes`, and `--no-truncate`. Flags must precede the command. Resource
+`--max-bytes`, and `--no-truncate`. Display flags must precede the command. Resource
 limits remain separate CLI flags; this config controls output display only.
 
 Defaults: 200 lines / 32 KiB per stream. Each MTK clipping region has exact
 `[truncated by mtk]`. Unique private `/tmp/mtk-*.log` contains complete wrapped
 output only; stdout/stderr bytes follow observed arrival order. The final
-filepath is on stderr. RTK summaries remain unchanged in the log. Flags must
-precede the command; `--no-truncate` still logs output and prints the filepath.
+filepath is on stderr. The log contains bytes after RTK processing: content RTK
+removed cannot be recovered. Display flags must precede the command;
+`--no-truncate` still logs output and prints the filepath.
 
 Codex resolves Homebrew `/opt/homebrew/bin/mtk` through PATH. Existing hooks
 need not be enabled; verify `command -v mtk` and `mtk --help` from its shell.
 
+## Advanced exact output
+
+Use `mtk proxy COMMAND ...` when you need to bypass a native handler's RTK
+summary while retaining MTK logging and resource limits. For complete displayed
+bytes, put `--no-truncate` before `proxy`:
+
+```bash
+mtk --no-truncate proxy git diff --time-limit 30s
+```
+
+Explicit `proxy` avoids RTK summarization. The stderr log filepath footer still
+prints. The advanced aliases `mp = mtk proxy` and `mr = mtk run` remain available.
+
 ## Preferences
 
-Instead of using `mtk proxy python3`, I prever that you use bun with `mtk bun` for everyday tasks.
-Prefer `mtk proxy fd` over `find`. Prefer `mtk rg` over `grep`.
-Any unknown command not recognized as an internal mtk or native rtk subcommand automatically falls back to `mtk proxy <command>`.
+Prefer `mtk bun` for everyday tasks when Bun is appropriate.
+Prefer `mtk fd` over `find`. Prefer `mtk rg` over `grep`.
+Any unknown command not recognized as an internal mtk or native rtk subcommand
+automatically falls back to the proxy path.
 
 # Aliases
 
 mr = mtk run
-mpf = mtk proxy fd
+mpf = mtk fd
 mrg = mtk rg
 md = mtk docker
-mpj = mtk proxy just
+mpj = mtk just
 mpnpm = mtk pnpm
 mgh = mtk gh
 mgit = mtk git
 mp = mtk proxy
 mb = mtk bun
-mpn = mtk proxy node
+mpn = mtk node
 mpd = mtk pnpm dlx
 mpe = mtk pnpm exec
 mnpm = mtk npm
 mnpx = mtk npx
-mssh = mtk proxy ssh
+mssh = mtk ssh
 mmd = mtk markitdown

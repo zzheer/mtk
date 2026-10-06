@@ -25,6 +25,7 @@ runner_sizes = importlib.util.module_from_spec(runner_spec)
 runner_spec.loader.exec_module(runner_sizes)
 parse_bytes = runner_sizes.parse_bytes
 MARKER = b"[truncated by mtk]\n"
+RESOURCE_VALUE_FLAGS = {"--time-limit", "--memory-limit", "--mem-limit", "--cpu-limit"}
 
 
 def defaults():
@@ -71,11 +72,34 @@ def defaults():
         raise ValueError(f"config {path}: {exc}") from exc
 
 
+def resource_suffix(args):
+    if "--" in args[1:]:
+        return args, []
+    end = len(args)
+    while end > 1:
+        arg = args[end - 1]
+        flag, equal, value = arg.partition("=")
+        if arg == "--exclude-children":
+            end -= 1
+        elif flag in RESOURCE_VALUE_FLAGS:
+            if not equal or not value:
+                raise ValueError(f"{flag} requires a value")
+            end -= 1
+        elif end > 2 and args[end - 2] in RESOURCE_VALUE_FLAGS:
+            if not arg:
+                raise ValueError(f"{args[end - 2]} requires a value")
+            end -= 2
+        else:
+            break
+    return args[:end], args[end:]
+
+
 def options(argv):
     max_lines, max_bytes, truncate = defaults()
     command = [argv[0]]
     rest = argv[1:]
-    value_flags = {"--time-limit", "--memory-limit", "--mem-limit", "--cpu-limit", "--singleton-name"}
+    value_flags = RESOURCE_VALUE_FLAGS | {"--singleton-name"}
+    limit_position = None
     while rest:
         arg = rest.pop(0)
         flag, equal, value = arg.partition("=")
@@ -95,14 +119,23 @@ def options(argv):
         elif arg == "--no-truncate":
             truncate = False
         else:
-            command.append(arg)
             if arg in value_flags:
                 if not rest:
                     raise ValueError(f"{arg} requires a value")
-                command.append(rest.pop(0))
+                command.extend((arg, rest.pop(0)))
             elif not arg.startswith("-") or arg == "--":
-                command.extend(rest)
+                wrapped, limits = resource_suffix(rest if arg == "--" else [arg, *rest])
+                position = len(command) if limit_position is None else limit_position
+                command[position:position] = limits
+                if arg == "--":
+                    command.append(arg)
+                command.extend(wrapped)
                 break
+            else:
+                if (limit_position is None and arg != "--exclude-children"
+                        and flag not in RESOURCE_VALUE_FLAGS | {"--singleton", "--singleton-wait"}):
+                    limit_position = len(command)
+                command.append(arg)
     return command, max_lines, max_bytes, truncate
 
 

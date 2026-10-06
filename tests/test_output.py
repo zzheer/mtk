@@ -1,5 +1,7 @@
 import errno
 import fcntl
+import importlib.util
+import json
 import os
 from pathlib import Path
 import pty
@@ -9,6 +11,7 @@ import signal
 import subprocess
 import struct
 import sys
+import tempfile
 import time
 import termios
 import unittest
@@ -16,6 +19,125 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 MTK = str(ROOT / "bin/mtk")
+spec = importlib.util.spec_from_file_location("mtk_output", ROOT / "libexec/mtk-output.py")
+output = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(output)
+
+
+class ResourceSuffixTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = Path(folder.name)
+        stub = self.folder / "rtk"
+        stub.write_text(f"#!{sys.executable}\n"
+            "import json, os, sys\n"
+            "args = sys.argv[1:]\n"
+            "if args[0] == '--verbose':\n"
+            "    args = args[1:]\n"
+            "if args[0] == 'proxy':\n"
+            "    os.execvp(args[1], args[1:])\n"
+            "print(json.dumps(sys.argv[1:]))\n")
+        stub.chmod(0o755)
+        self.env = {**os.environ, "PATH": str(self.folder) + os.pathsep + os.environ["PATH"],
+            "XDG_CONFIG_HOME": str(self.folder / "config")}
+
+    def invoke(self, args):
+        result = subprocess.run([MTK, *args], env=self.env, capture_output=True, timeout=10)
+        for match in re.findall(rb"(?m)^(/tmp/mtk-[^\r\n]+\.log)\r?$", result.stderr):
+            self.addCleanup(Path(os.fsdecode(match)).unlink, missing_ok=True)
+        return result
+
+    def test_native_dispatch_strips_separate_and_equal_suffixes(self):
+        for suffix in (("--time-limit", "2s", "--memory-limit=256M"),
+                       ("--time-limit=2s", "--mem-limit", "256M")):
+            with self.subTest(suffix=suffix):
+                result = self.invoke(["git", "diff", *suffix])
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), ["git", "diff"])
+
+    def test_prefix_and_suffix_deadlines_exit_124(self):
+        command = [sys.executable, "-c", "import time; time.sleep(1.5); print('MUST_NOT_COMPLETE')"]
+        for args in (["--time-limit", "0.2s", *command],
+                     [*command, "--time-limit=0.2s"],
+                     ["--time-limit", "3s", *command, "--time-limit", "2s", "--time-limit", "0.2s"]):
+            with self.subTest(args=args):
+                result = self.invoke(args)
+                self.assertEqual(result.returncode, 124, result.stderr)
+                self.assertNotIn(b"MUST_NOT_COMPLETE", result.stdout)
+
+    def test_suffix_memory_limit_exits_137(self):
+        result = self.invoke([sys.executable, "-c",
+            "import time; x=bytearray(60*1024*1024); time.sleep(2)",
+            "--mem-limit=45M", "--time-limit", "4s"])
+        self.assertEqual(result.returncode, 137, result.stderr)
+
+    def test_invalid_and_missing_suffix_limits_do_not_start_workload(self):
+        for suffix in (("--time-limit",), ("--memory-limit=",), ("--time-limit", "bad"),
+                       ("--cpu-limit", "999999"), ("--cpu-limit", "0"),
+                       ("--memory-limit", "bad"), ("--cpu-limit", "--time-limit=2s")):
+            with self.subTest(suffix=suffix):
+                result = self.invoke([sys.executable, "-c", "print('MUST_NOT_RUN')", *suffix])
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertNotIn(b"MUST_NOT_RUN", result.stdout)
+
+    def test_non_suffix_and_protected_arguments_are_preserved(self):
+        cases = (
+            ["space value", "", "--time-limit", "1s", "last"],
+            ["--", "--time-limit", "1s"],
+            ["--", "last", "--cpu-limit=50"],
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                result = self.invoke(["--time-limit", "2s", "git", "diff", *args])
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), ["git", "diff", *args])
+
+    def test_shell_string_and_empty_arguments_survive_suffix_extraction(self):
+        script = "import json, sys; print(json.dumps(sys.argv[1:]))"
+        args = ["space value", "", "echo --time-limit 5s; printf '$HOME'"]
+        result = self.invoke([sys.executable, "-c", script, *args, "--time-limit", "2s"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), args)
+
+    def test_explicit_proxy_and_one_log_preserve_exit_status(self):
+        result = self.invoke(["proxy", sys.executable, "-c",
+            "import sys; print('bounded'); sys.exit(7)", "--time-limit=2s"])
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertEqual(result.stdout, b"bounded\n")
+        paths = re.findall(rb"(?m)^(/tmp/mtk-[^\r\n]+\.log)\r?$", result.stderr)
+        self.assertEqual(len(paths), 1, result.stderr)
+        self.assertEqual(Path(os.fsdecode(paths[0])).read_bytes(), b"bounded\n")
+
+    def test_cpu_flags_normalize_before_command(self):
+        from unittest import mock
+        with mock.patch.dict(os.environ, self.env):
+            command, _, _, _ = output.options(["mtk", "--cpu-limit", "25", "git", "diff",
+                "--cpu-limit=50", "--exclude-children"])
+        self.assertEqual(command, ["mtk", "--cpu-limit", "25", "--cpu-limit=50",
+            "--exclude-children", "git", "diff"])
+
+    def test_prefix_command_separator_allows_suffix(self):
+        result = self.invoke(["--", "git", "diff", "--time-limit=2s"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), ["git", "diff"])
+
+    def test_native_global_flags_do_not_block_suffix_limits(self):
+        result = self.invoke(["--verbose", "git", "diff", "--time-limit=2s"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), ["--verbose", "git", "diff"])
+
+    def test_suffix_overrides_prefix_limit_before_native_global_flags(self):
+        result = self.invoke(["--time-limit", "3s", "--verbose", "proxy", sys.executable,
+            "-c", "import time; time.sleep(1.5); print('MUST_NOT_COMPLETE')", "--time-limit=0.2s"])
+        self.assertEqual(result.returncode, 124, result.stderr)
+        self.assertNotIn(b"MUST_NOT_COMPLETE", result.stdout)
+
+    def test_display_and_singleton_flags_are_not_extracted(self):
+        args = ["git", "diff", "--max-lines", "1", "--singleton=untouched"]
+        result = self.invoke(args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), args)
 
 
 class OutputTests(unittest.TestCase):
