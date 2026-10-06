@@ -7,9 +7,10 @@ memory, and time limits. Keep everyday terminal output compact while retaining
 complete wrapped output for investigating failures.
 
 ```bash
+mtk COMMAND ... [resource limits]
 mtk git status
-mtk --time-limit 60s --memory-limit 2G --cpu-limit 100 npm test
-mtk --no-truncate proxy python3 script.py
+mtk npm test --time-limit 60s --memory-limit 2G --cpu-limit 100
+mtk --no-truncate python3 script.py
 ```
 
 [Install](#install) · [Try it](#try-it) · [Output and logs](#output-and-logs) ·
@@ -41,7 +42,7 @@ source-checkout wrapper or CPU helper under your home directory is required.
 Print eight lines with a three-line display limit:
 
 ```bash
-mtk --max-lines 3 proxy python3 -c 'for i in range(1, 9): print(f"line {i}")'
+mtk --max-lines 3 python3 -c 'for i in range(1, 9): print(f"line {i}")'
 ```
 
 Displayed output:
@@ -65,13 +66,14 @@ For common development commands:
 mtk ls .
 mtk git diff
 mtk cargo test
-mtk proxy just test
-mtk proxy python3 script.py
+mtk just test
+mtk python3 script.py
 ```
 
-RTK-supported commands retain RTK's summaries. Use `mtk proxy COMMAND` for
-command output without a command-specific RTK summary. Unknown commands also
-use the proxy path; interactive passthrough keeps a terminal attached.
+Use native handlers for Git, ripgrep, GitHub CLI, tests, and builds to retain
+RTK's summaries. Unknown commands automatically use the proxy path, so
+`mtk just`, `mtk python3`, and `mtk fd` need no explicit `proxy`.
+Interactive passthrough keeps a terminal attached.
 
 ## Output and logs
 
@@ -87,8 +89,8 @@ to a unique private `/tmp/mtk-*.log` with permissions `0600`.
 - Capture failures are reported explicitly.
 
 **Complete means complete wrapped output.** If RTK already summarized or
-removed text, MTK cannot reconstruct it. Choose `proxy` when you need the
-command's unsummarized output.
+removed text, MTK cannot reconstruct it. See [Exact output](#exact-output) when
+you need the command's unsummarized output.
 
 Noninteractive execution uses separate stdout/stderr pipes and separate display
 budgets. When stdin, stdout, and stderr are terminals, MTK uses a PTY: combined
@@ -99,7 +101,7 @@ Override limits before the command:
 
 ```bash
 mtk --max-lines 500 --max-bytes 128KiB git diff
-mtk --no-truncate proxy python3 script.py
+mtk --no-truncate python3 script.py
 ```
 
 **For JSON and other machine-readable pipelines, use `--no-truncate`.**
@@ -108,6 +110,20 @@ and the stderr footer remain enabled.
 
 Display limits do not limit log size. `/tmp` logs can contain sensitive command
 output; manage retention and available disk space separately.
+
+### Exact output
+
+For advanced use, `mtk proxy COMMAND ...` bypasses command-specific RTK
+summaries while retaining MTK logging and resource limits. Use `--no-truncate`
+before `proxy` when the displayed bytes must remain complete:
+
+```bash
+mtk --no-truncate proxy git diff --time-limit 30s
+```
+
+The log records the wrapped output after any RTK processing; it cannot recover
+content RTK removed. Explicit `proxy` avoids that processing. The stderr log
+filepath footer still prints.
 
 ## Global config
 
@@ -140,13 +156,30 @@ CLI options.
 Bound a workload independently of how much output you display:
 
 ```bash
-mtk --time-limit 60s --memory-limit 2G --cpu-limit 100 proxy python3 worker.py
+mtk python3 worker.py --time-limit 60s --memory-limit 2G --cpu-limit 100
+mtk cargo build --time-limit=5m --mem-limit=2G --cpu-limit=100
 ```
 
 - `--time-limit DURATION`: terminate the workload at its deadline.
-- `--memory-limit SIZE`: terminate when sampled total workload RSS exceeds the limit.
+- `--memory-limit SIZE` (alias `--mem-limit`): terminate when sampled total workload RSS exceeds the limit.
 - `--cpu-limit PERCENT`: limit CPU use, including descendants by default.
 - `--exclude-children`: apply the CPU limit to the root process only.
+
+These resource flags are extracted only from a final contiguous suffix after
+the command and its arguments. Value flags accept separate values or `=VALUE`.
+Prefix resource flags still work; repeated limits use the last value, and suffix
+values override prefix values. A standalone `--` anywhere after `COMMAND`
+disables suffix extraction for that invocation and preserves the wrapped
+arguments:
+
+```bash
+mtk --time-limit 60s python3 worker.py --time-limit 30s
+mtk python3 worker.py -- --time-limit 30s
+```
+
+The first command has a 30-second MTK limit. The second passes the arguments
+through without extracting a resource suffix. Display flags (`--max-lines`,
+`--max-bytes`, `--no-truncate`) and singleton flags remain prefix-only.
 
 CPU percentage uses one logical core as `100`; `50` means half a core.
 MTK ships its corrected CPU limiter, including support for Apple Silicon.
@@ -199,8 +232,11 @@ Optional aliases for bash/zsh:
 eval "$(mtk env)"
 ```
 
-Examples: `mgit` → `mtk git`, `mp` → `mtk proxy`, `mrg` → `mtk rg`.
-The standalone `mpp` command runs `mtk proxy python3`.
+Examples: `mgit` → `mtk git`, `mrg` → `mtk rg`, `mpf` → `mtk fd`,
+`mpj` → `mtk just`, `mpn` → `mtk node`, `mssh` → `mtk ssh`.
+The standalone `mpp` command runs `mtk python3`.
+For advanced explicit dispatch, `mp` remains `mtk proxy` and `mr` remains
+`mtk run`.
 
 The public [MTK agent guide](MTK.md) describes commands, limits, logs, and when
 direct execution is appropriate. For global agent instructions, use the
@@ -237,7 +273,7 @@ helpers, filters, source files, and the private limiter build. Generate a local
 archive and formula with:
 
 ```bash
-mtk proxy ./scripts/release.sh 0.2.2 --local
+mtk ./scripts/release.sh 0.2.2 --local
 ```
 
 For a published formula, pass `--url` with its exact HTTPS source archive URL.

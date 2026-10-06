@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Accept time, memory, and CPU limits as a final command suffix while preserving
+  native RTK dispatch, prefix syntax, and last-value precedence. Use `--` after
+  the command to protect tool-owned flags from suffix extraction.
+- Route everyday aliases and Python helpers through automatic dispatch, and
+  document command-first limits while retaining explicit exact-output passthrough.
 - Read global config as UTF-8 and cover symlink-to-regular success plus device
   and FIFO rejection with a specific stderr assertion; invalid UTF-8 bytes fail
   closed before the wrapped command. Directories and other nonregular paths are

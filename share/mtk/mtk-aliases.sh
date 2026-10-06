@@ -5,24 +5,24 @@
 #   source $(brew --prefix)/share/mtk/mtk-aliases.sh
 
 alias mr='mtk run'
-alias mpf='mtk proxy fd'
+alias mpf='mtk fd'
 alias mrg='mtk rg'
 alias md='mtk docker'
-alias mpj='mtk proxy just'
+alias mpj='mtk just'
 alias mpnpm='mtk pnpm'
 alias mgh='mtk gh'
 alias mgit='mtk git'
 alias mp='mtk proxy'
 alias mb='mtk bun'
-alias mpn='mtk proxy node'
+alias mpn='mtk node'
 alias mpd='mtk pnpm dlx'
 alias mpe='mtk pnpm exec'
 alias mnpm='mtk npm'
 alias mnpx='mtk npx'
-alias mssh='mtk proxy ssh'
+alias mssh='mtk ssh'
 alias mmd='mtk markitdown'
 
-# Python proxy helper function
+# Python helper function
 mpp() {
-  mtk proxy python3 "$@"
+  mtk python3 "$@"
 }
