@@ -3,9 +3,9 @@ class Mtk < Formula
 
   desc "Bounded CLI and developer toolkit with RTK summaries"
   homepage "https://github.com/zzheer/mtk"
-  url "https://api.github.com/repos/zzheer/mtk/tarball/65057849764fffa7414f510397fa0f82a5eda7da"
-  version "0.2.1"
-  sha256 "2d3ab2b403bc7da8ac59d5ccc47798d0e2afb5d1d8365c9974ebe7c051cc5855"
+  url "https://api.github.com/repos/zzheer/mtk/tarball/94630c17cef0acb48c4c093b08cd235b5de3df3d"
+  version "0.3.0"
+  sha256 "39c3bb072331c6881bc7cd5f351fdbf6048eb15e37bea3e3e31921f3605897f8"
   license all_of: ["MIT", "GPL-2.0-or-later"]
 
   depends_on "ast-grep"
@@ -24,7 +24,7 @@ class Mtk < Formula
   def install
     system "bash", "-c", "ulimit -t 120; exec make -j2 -C vendor/cpulimit/src CFLAGS='-Wall -O2 -D_GNU_SOURCE'"
     libexec.install "vendor/cpulimit/src/cpulimit" => "mtk-cpulimit"
-    libexec.install "libexec/mtk-ai", "libexec/mtk-media", "libexec/mtk-core.sh", "libexec/mtk-runner.py", "libexec/mtk-output.py", "libexec/mtk_jobs.py", "libexec/mtk-search", "libexec/mtk-fetch"
+    libexec.install "libexec/mtk-ai", "libexec/mtk-media", "libexec/mtk-core.sh", "libexec/mtk-runner.py", "libexec/mtk-output.py", "libexec/mtk-search", "libexec/mtk-fetch", "libexec/mtk_jobs.py"
     bin.install "bin/mtk", "bin/mpp"
     pkgshare.install "share/mtk/mtk-aliases.sh", "share/mtk/justfile", "share/mtk/filters.toml", "vendor/cpulimit/COPYING", "vendor/cpulimit/LICENSE", "vendor/cpulimit/PROVENANCE.md"
     rewrite_shebang detected_python_shebang, libexec/"mtk-ai", libexec/"mtk-media", libexec/"mtk-runner.py", libexec/"mtk-output.py"
