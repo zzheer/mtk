@@ -61,3 +61,14 @@ class AliasTests(unittest.TestCase):
             env=self.env, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), ["python3", "space value", "", "--time-limit", "2s"])
+
+    def test_root_python_helper_preserves_arguments_without_proxy(self):
+        for shell in ("bash", "zsh"):
+            with self.subTest(shell=shell):
+                result = subprocess.run([shell, "-c",
+                    'source "$1"; mpp "space value" "" --time-limit 2s',
+                    "helper", str(ROOT / "mpp.sh")],
+                    env=self.env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout),
+                    ["python3", "space value", "", "--time-limit", "2s"])

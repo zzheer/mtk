@@ -113,6 +113,8 @@ class InspectionFailureRegression(unittest.TestCase):
                 if identity:
                     known[pid] = identity
                 self.assertIn('injected persistent ps snapshot failure', output)
+                if interrupted and not standalone:
+                    self.assertIn('incomplete log:', output)
                 if terminal:
                     flags = termios.ECHO | termios.ICANON
                     self.assertEqual(termios.tcgetattr(master)[3] & flags, baseline[3] & flags,
@@ -160,6 +162,11 @@ class InspectionFailureRegression(unittest.TestCase):
 
     def test_runner_preserves_sigterm_when_snapshot_is_interrupted(self):
         self.exercise(standalone=True, interrupted=True)
+
+    def test_output_preserves_sigterm_when_snapshot_is_interrupted(self):
+        for terminal in (False, True):
+            with self.subTest(terminal=terminal):
+                self.exercise(terminal=terminal, interrupted=True)
 
     def test_terminal_restored_when_ps_fails(self):
         self.exercise(terminal=True)

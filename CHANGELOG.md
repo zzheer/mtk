@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Preserve outer capture SIGTERM status when process discovery is interrupted,
+  while reporting incomplete capture and restoring terminal state.
+- Remove obsolete proxy dispatch from the root Python shell helper and cover
+  argument preservation in Bash and Zsh.
+
 - Keep emergency cleanup available when process discovery fails, restore
   terminal settings even if finalization fails, and preserve termination
   status when a forwarded signal interrupts the process snapshot itself.

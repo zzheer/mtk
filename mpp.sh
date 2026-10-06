@@ -1,4 +1,3 @@
 function mpp() {
-    mtk proxy python3 "$@"
+    mtk python3 "$@"
 }
-

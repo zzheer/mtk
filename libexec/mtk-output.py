@@ -33,6 +33,12 @@ RESOURCE_VALUE_FLAGS = {"--time-limit", "--memory-limit", "--mem-limit", "--cpu-
 DISPLAY_VALUE_FLAGS = {"--max-lines", "--max-bytes"}
 
 
+class CaptureFailure(Exception):
+    def __init__(self, error, status):
+        super().__init__(str(error))
+        self.status = status
+
+
 def defaults():
     directory = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     path = Path(directory) / "mtk/config.json"
@@ -205,6 +211,7 @@ def execute(command, log, max_lines, max_bytes, truncate):
     child = None
     master = None
     tracker = None
+    tracking_failed = False
     pending_signal = None
     stop_deadline = None
     termination_signal = None
@@ -299,7 +306,8 @@ def execute(command, log, max_lines, max_bytes, truncate):
                     key.data.write(b"", final=True)
                     selector.unregister(key.fileobj)
         return forced_status if forced_status is not None else status
-    except BaseException:
+    except BaseException as exc:
+        tracking_failed = True
         if tracker:
             # Cleanup must not depend on the registry that may have failed.
             tracker.persist = False
@@ -314,10 +322,13 @@ def execute(command, log, max_lines, max_bytes, truncate):
                 child.wait()
             else:
                 os.waitpid(pid, 0)
+        interrupted = pending_signal or termination_signal
+        if interrupted in (signal.SIGTERM, signal.SIGHUP):
+            raise CaptureFailure(exc, 128 + interrupted) from exc
         raise
     finally:
         try:
-            if tracker:
+            if tracker and not tracking_failed:
                 tracker.finish()
         finally:
             selector.close()
@@ -341,11 +352,11 @@ def main():
         fd, path = tempfile.mkstemp(prefix="mtk-", suffix=".log", dir="/tmp")
         with os.fdopen(fd, "wb", buffering=0) as log:
             code = execute(command, log, max_lines, max_bytes, truncate)
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, CaptureFailure) as exc:
         print(f"\nmtk: command capture failed: {exc}", file=sys.stderr)
         if path:
             print(f"mtk: incomplete log: {path}", file=sys.stderr)
-        return 1
+        return exc.status if isinstance(exc, CaptureFailure) else 1
     # stderr gets its own line even if the command did not end in a newline.
     print(f"\n{path}", file=sys.stderr, flush=True)
     return code if code >= 0 else 128 - code
