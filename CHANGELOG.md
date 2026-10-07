@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Clean governed workers after outer initial process discovery fails, including
+  failures during governor initialization and near-timeout snapshots. Install
+  governor signal handlers before worker creation and bound emergency grace.
+
 - Preserve outer capture SIGTERM status when process discovery is interrupted,
   while reporting incomplete capture and restoring terminal state.
 - Remove obsolete proxy dispatch from the root Python shell helper and cover

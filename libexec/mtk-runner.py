@@ -287,6 +287,17 @@ def main() -> None:
         finally:
             signal.signal(signal.SIGTTOU, previous)
 
+    exit_reason = None
+
+    def forward_signal(sig, frame):
+        nonlocal exit_reason
+        if exit_reason is None:
+            exit_reason = 128 + sig
+
+    # Capture must be able to request cleanup as soon as a worker can exist.
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, forward_signal)
+
     child = None
     try:
         if not os.environ.get("MTK_JOB_CAPTURED"):
@@ -311,8 +322,6 @@ def main() -> None:
             os.close(lock_fd)
         sys.exit(127)
 
-    exit_reason = None
-
     def refresh_descendants():
         tracker.refresh()
 
@@ -330,13 +339,6 @@ def main() -> None:
         signal_workload(signal.SIGKILL)
         child.wait()
 
-    def forward_signal(sig, frame):
-        nonlocal exit_reason
-        if exit_reason is None:
-            exit_reason = 128 + sig
-
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, forward_signal)
     signal.signal(signal.SIGWINCH, lambda sig, frame: signal_workload(sig))
 
     if cpu_limit_pct:

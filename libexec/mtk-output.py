@@ -314,9 +314,21 @@ def execute(command, log, max_lines, max_bytes, truncate):
             tracker.signal(signal.SIGKILL)
         elif not completed():
             try:
-                os.killpg(pid, signal.SIGKILL)
+                # Initial discovery can fail after a governor creates a separate
+                # worker group. Let that governor clean up before killing it.
+                os.killpg(pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
+            # Allow the governor's initial snapshot and both cleanup snapshots
+            # (each bounded to 3s), plus its 1s escalation grace.
+            deadline = time.monotonic() + 10
+            while not completed() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            if not completed():
+                try:
+                    os.killpg(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
         if not completed():
             if child:
                 child.wait()
