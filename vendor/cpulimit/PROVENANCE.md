@@ -10,6 +10,10 @@ milliseconds, correct PID byte/count handling and child enumeration, and
 compile against current macOS SDK headers. The original correction dates
 were not recovered; the import date above records this distribution update.
 
+MTK updates on 2026-10-06 follow the full Darwin ancestor chain when child
+limiting is enabled and reset CPU samples when a PID has a different birth
+time. Local regressions cover a CPU-heavy grandchild and reused PID history.
+
 Upstream GPL-2.0-or-later notices are preserved in `LICENSE`, `COPYING`, and
 source headers. MTK invokes this separate executable rather than linking it.
 

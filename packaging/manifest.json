@@ -21,7 +21,8 @@
       "libexec/mtk-runner.py",
       "libexec/mtk-output.py",
       "libexec/mtk-search",
-      "libexec/mtk-fetch"
+      "libexec/mtk-fetch",
+      "libexec/mtk_jobs.py"
     ],
     "bin": [
       "bin/mtk",

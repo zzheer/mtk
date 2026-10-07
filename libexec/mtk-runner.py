@@ -23,6 +23,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mtk_jobs import Tracker, prepare_state
+
 
 LOCK_DIR = Path(os.environ.get("MTK_LOCK_DIR", Path.home() / ".local/state/mtk/locks"))
 
@@ -284,36 +287,46 @@ def main() -> None:
         finally:
             signal.signal(signal.SIGTTOU, previous)
 
+    exit_reason = None
+
+    def forward_signal(sig, frame):
+        nonlocal exit_reason
+        if exit_reason is None:
+            exit_reason = 128 + sig
+
+    # Capture must be able to request cleanup as soon as a worker can exist.
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, forward_signal)
+
+    child = None
     try:
+        if not os.environ.get("MTK_JOB_CAPTURED"):
+            prepare_state()
         child = subprocess.Popen(cmd, start_new_session=not interactive,
                                  process_group=0 if interactive else None)
         if interactive:
             set_foreground(child.pid)
+        tracker = Tracker(child.pid, cmd, persist=False)
+        tracker.persist = not os.environ.get("MTK_JOB_CAPTURED")
     except Exception as e:
+        if child is not None:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait()
+            if foreground is not None:
+                set_foreground(foreground)
         print(f"mtk: failed to execute {cmd[0]!r}: {e}", file=sys.stderr)
         if lock_fd is not None:
             os.close(lock_fd)
         sys.exit(127)
 
-    tracked_pids = {child.pid}
-    exit_reason = None
-
     def refresh_descendants():
-        for pid in tuple(tracked_pids):
-            tracked_pids.update(get_process_tree_pids(pid))
+        tracker.refresh()
 
     def signal_workload(sig):
-        # The group covers children spawned between samples; tracked PIDs cover
-        # descendants that detached or were reparented after the root exited.
-        try:
-            os.killpg(child.pid, sig)
-        except (ProcessLookupError, PermissionError):
-            pass
-        for pid in reversed(sorted(tracked_pids)):
-            try:
-                os.kill(pid, sig)
-            except (ProcessLookupError, PermissionError):
-                pass
+        tracker.signal(sig)
 
     def stop_workload():
         refresh_descendants()
@@ -326,13 +339,6 @@ def main() -> None:
         signal_workload(signal.SIGKILL)
         child.wait()
 
-    def forward_signal(sig, frame):
-        nonlocal exit_reason
-        if exit_reason is None:
-            exit_reason = 128 + sig
-
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, forward_signal)
     signal.signal(signal.SIGWINCH, lambda sig, frame: signal_workload(sig))
 
     if cpu_limit_pct:
@@ -349,6 +355,7 @@ def main() -> None:
 
     started = time.monotonic()
     next_memory_check = started
+    tracking_failed = False
     try:
         while child.poll() is None and exit_reason is None:
             refresh_descendants()
@@ -374,6 +381,14 @@ def main() -> None:
         if exit_reason is not None:
             stop_workload()
         exit_code = child.wait()
+    except BaseException:
+        # Keep identity-checked cleanup available after a registry failure.
+        tracking_failed = True
+        tracker.persist = False
+        tracker.signal(signal.SIGKILL)
+        exit_code = child.wait()
+        if exit_reason is None:
+            raise
     finally:
         if foreground is not None:
             set_foreground(foreground)
@@ -389,6 +404,8 @@ def main() -> None:
         if lock_fd is not None:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
+        if not tracking_failed:
+            tracker.finish()
 
     if exit_reason is not None:
         sys.exit(exit_reason)

@@ -18,6 +18,18 @@ spec.loader.exec_module(runner)
 
 
 class GovernorTests(unittest.TestCase):
+    def test_invalid_job_state_fails_before_workload(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder) / 'state'
+            state.write_text('not a directory')
+            marker = Path(folder) / 'must-not-exist'
+            env = dict(os.environ, XDG_STATE_HOME=str(state))
+            env.pop('MTK_JOB_CAPTURED', None)
+            result = subprocess.run([sys.executable, str(RUNNER), '--',
+                '/usr/bin/touch', str(marker)], env=env, capture_output=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(marker.exists(), result.stderr)
+
     def test_rejected_cpu_limit_fails_before_workload(self):
         result = self.run_command(["--cpu-limit", "999999"], "print('MUST_NOT_RUN')")
         self.assertEqual(result.returncode, 2, result.stderr)
@@ -27,6 +39,7 @@ class GovernorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             package = Path(folder)
             shutil.copy2(RUNNER, package / "mtk-runner.py")
+            shutil.copy2(RUNNER.with_name("mtk_jobs.py"), package / "mtk_jobs.py")
             helper = package / "mtk-cpulimit"
             helper.write_text("#!/bin/sh\nsleep 0.1\nexit 9\n")
             helper.chmod(0o755)
@@ -154,6 +167,7 @@ class GovernorTests(unittest.TestCase):
             package.mkdir()
             packaged_runner = package / "mtk-runner.py"
             shutil.copy2(RUNNER, packaged_runner)
+            shutil.copy2(RUNNER.with_name("mtk_jobs.py"), package / "mtk_jobs.py")
             shutil.copy2(runner.find_cpulimit_bin(), package / "mtk-cpulimit")
             env = dict(os.environ, HOME=folder, PATH="/usr/bin:/bin")
             for exclude in (False, True):
