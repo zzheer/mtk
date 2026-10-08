@@ -2,6 +2,7 @@
 """Stream wrapped command output to a private log and a bounded display."""
 
 import codecs
+from collections import deque
 import errno
 import fcntl
 import json
@@ -31,6 +32,12 @@ parse_bytes = runner_sizes.parse_bytes
 MARKER = b"[truncated by mtk]\n"
 RESOURCE_VALUE_FLAGS = {"--time-limit", "--memory-limit", "--mem-limit", "--cpu-limit"}
 DISPLAY_VALUE_FLAGS = {"--max-lines", "--max-bytes"}
+SHORT_RESOURCE_FLAGS = {
+    "--time": "--time-limit",
+    "--memory": "--memory-limit",
+    "--cpu": "--cpu-limit",
+    "--root-only": "--exclude-children",
+}
 
 
 class CaptureFailure(Exception):
@@ -57,7 +64,7 @@ def defaults():
             raise ValueError("file exceeds 64 Ki characters")
         config = json.loads(contents)
     except FileNotFoundError:
-        return 200, 32768, True
+        return 80, 32768, True
     except (OSError, ValueError) as exc:
         raise ValueError(f"config {path}: {exc}") from exc
     try:
@@ -66,7 +73,7 @@ def defaults():
         unknown = config.keys() - {"max_lines", "max_bytes", "truncate"}
         if unknown:
             raise ValueError(f"unknown settings: {', '.join(sorted(unknown))}")
-        lines = config.get("max_lines", 200)
+        lines = config.get("max_lines", 80)
         size = config.get("max_bytes", 32768)
         truncate = config.get("truncate", True)
         if type(lines) is not int or lines <= 0:
@@ -85,6 +92,33 @@ def defaults():
 
 def resource_suffix(args):
     if "--" in args[1:]:
+        separator = len(args) - 1 - args[::-1].index("--")
+        suffix = args[separator + 1:]
+        value_flags = RESOURCE_VALUE_FLAGS | DISPLAY_VALUE_FLAGS | {"--singleton-name"}
+        boolean_flags = {"--exclude-children", "--no-truncate", "--singleton", "--singleton-wait"}
+        explicit_flags = DISPLAY_VALUE_FLAGS | {"--no-truncate", "--singleton", "--singleton-wait", "--singleton-name"} | SHORT_RESOURCE_FLAGS.keys()
+        if suffix and suffix[0].partition("=")[0] in explicit_flags:
+            normalized = []
+            index = 0
+            while index < len(suffix):
+                flag, equal, value = suffix[index].partition("=")
+                option = flag
+                flag = SHORT_RESOURCE_FLAGS.get(flag, flag)
+                if flag in value_flags:
+                    if not equal:
+                        index += 1
+                        if index >= len(suffix):
+                            raise ValueError(f"{option} requires a value")
+                        value = suffix[index]
+                    if not value or value.startswith("--"):
+                        raise ValueError(f"{option} requires a value")
+                    normalized.extend((flag, value))
+                elif flag in boolean_flags and (not equal or flag in {"--singleton", "--singleton-wait"}):
+                    normalized.append(f"{flag}={value}" if equal else flag)
+                else:
+                    raise ValueError(f"unexpected MTK option: {suffix[index]}")
+                index += 1
+            return args[:separator], normalized
         return args, []
     end = len(args)
     while end > 1:
@@ -153,43 +187,111 @@ def options(argv):
 
 
 class Display:
-    def __init__(self, stream, max_lines, max_bytes, truncate):
-        self.stream = stream
-        self.max_lines, self.max_bytes = max_lines, max_bytes
+    def __init__(self, max_lines, max_bytes, truncate):
+        self.head_lines = (max_lines + 1) // 2
+        self.tail_lines = max_lines // 2
+        self.max_bytes = max_bytes
         self.truncate = truncate
-        self.lines = self.size = 0
+        self.lines = self.size = self.chars = self.words = 0
+        self.in_word = self.exhausted = False
         self.clipped = False
         self.ends_newline = True
-        self.decoder = codecs.getincrementaldecoder("utf-8")("surrogateescape")
+        self.last_stream = sys.stdout.buffer
+        self.decoders = {}
+        self.sinks = {}
+        self.tail = deque(maxlen=self.tail_lines)
+        self.pending = []
+        self.pending_chars = self.pending_bytes = 0
+        self.pending_clipped = False
 
-    def write(self, data, final=False):
+    def write(self, stream, data, final=False):
         if not self.truncate:
-            self.emit(data)
+            self.emit(stream, data)
             return
-        text = self.decoder.decode(data, final=final)
-        if self.clipped:
+        if self.exhausted:
+            return
+        decoder = self.decoders.setdefault(stream, codecs.getincrementaldecoder("utf-8")("surrogateescape"))
+        text = decoder.decode(data, final=final)
+        parts = text.split("\n")
+        for index, part in enumerate(parts):
+            newline = index < len(parts) - 1
+            fragment = part + ("\n" if newline else "")
+            if not fragment:
+                continue
+            if self.lines < self.head_lines:
+                self.bounded_emit(stream, fragment)
+            else:
+                room = 8000 - self.pending_chars
+                retained_chars = []
+                retained_bytes = 0
+                for char in fragment[:room]:
+                    size = len(char.encode("utf-8", "surrogateescape"))
+                    if self.pending_bytes + retained_bytes + size > self.max_bytes:
+                        break
+                    retained_chars.append(char)
+                    retained_bytes += size
+                retained = "".join(retained_chars)
+                self.pending_clipped |= len(retained) < len(fragment)
+                if retained:
+                    if self.pending and self.pending[-1][0] is stream:
+                        self.pending[-1] = (stream, self.pending[-1][1] + retained)
+                    else:
+                        self.pending.append((stream, retained))
+                    self.pending_chars += len(retained)
+                    self.pending_bytes += retained_bytes
+            if newline:
+                if self.lines >= self.head_lines:
+                    self.close_line()
+                self.lines += 1
+            if self.exhausted:
+                break
+
+    def close_line(self):
+        if len(self.tail) == self.tail_lines:
+            self.clipped = True
+        self.tail.append((self.pending, self.pending_clipped))
+        self.pending = []
+        self.pending_chars = self.pending_bytes = 0
+        self.pending_clipped = False
+
+    def bounded_emit(self, stream, text):
+        if self.exhausted:
             return
         prefix = bytearray()
         for char in text:
             encoded = char.encode("utf-8", "surrogateescape")
-            if self.lines >= self.max_lines or self.size + len(encoded) > self.max_bytes:
-                self.emit(prefix)
-                self.emit((b"" if self.ends_newline else b"\n") + MARKER)
-                self.clipped = True
-                return
+            new_word = not char.isspace() and not self.in_word
+            if self.chars >= 8000 or self.size + len(encoded) > self.max_bytes or (new_word and self.words >= 1500):
+                self.clipped = self.exhausted = True
+                break
             prefix.extend(encoded)
             self.size += len(encoded)
-            self.lines += char == "\n"
-        self.emit(prefix)
+            self.chars += 1
+            self.words += new_word
+            self.in_word = not char.isspace()
+        self.emit(stream, prefix)
 
-    def emit(self, data):
+    def finish(self):
+        if self.truncate:
+            if self.pending or self.pending_clipped:
+                self.close_line()
+            for segments, clipped in self.tail:
+                self.clipped |= clipped
+                for stream, text in segments:
+                    self.bounded_emit(stream, text)
+            if self.clipped:
+                self.emit(self.last_stream, (b"" if self.ends_newline else b"\n") + MARKER)
+
+    def emit(self, stream, data):
         if data:
+            sink = self.sinks.get(stream, stream)
             try:
-                self.stream.write(data)
-                self.stream.flush()
+                sink.write(data)
+                sink.flush()
             except BrokenPipeError:
                 # Keep draining and logging even when a downstream pipe closes.
-                self.stream = open(os.devnull, "wb", buffering=0)
+                self.sinks[stream] = open(os.devnull, "wb", buffering=0)
+            self.last_stream = stream
             self.ends_newline = data.endswith(b"\n")
 
 
@@ -217,12 +319,13 @@ def execute(command, log, max_lines, max_bytes, truncate):
     termination_signal = None
     forced_status = None
     status = None
+    display = Display(max_lines, max_bytes, truncate)
     if terminal:
         env["MTK_OUTPUT_TTY"] = "1"
         pid, master = pty.fork()
         if pid == 0:
             os.execvpe(command[0], command, env)
-        selector.register(master, selectors.EVENT_READ, Display(sys.stdout.buffer, max_lines, max_bytes, truncate))
+        selector.register(master, selectors.EVENT_READ, sys.stdout.buffer)
         selector.register(0, selectors.EVENT_READ, None)
         saved_terminal = termios.tcgetattr(0)
         tty.setraw(0)
@@ -239,8 +342,8 @@ def execute(command, log, max_lines, max_bytes, truncate):
     else:
         child = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         pid = child.pid
-        selector.register(child.stdout, selectors.EVENT_READ, Display(sys.stdout.buffer, max_lines, max_bytes, truncate))
-        selector.register(child.stderr, selectors.EVENT_READ, Display(sys.stderr.buffer, max_lines, max_bytes, truncate))
+        selector.register(child.stdout, selectors.EVENT_READ, sys.stdout.buffer)
+        selector.register(child.stderr, selectors.EVENT_READ, sys.stderr.buffer)
 
     def forward(sig, frame):
         nonlocal pending_signal
@@ -301,10 +404,11 @@ def execute(command, log, max_lines, max_bytes, truncate):
                         selector.unregister(key.fileobj)
                 elif data:
                     log.write(data)
-                    key.data.write(data)
+                    display.write(key.data, data)
                 else:
-                    key.data.write(b"", final=True)
+                    display.write(key.data, b"", final=True)
                     selector.unregister(key.fileobj)
+        display.finish()
         return forced_status if forced_status is not None else status
     except BaseException as exc:
         tracking_failed = True

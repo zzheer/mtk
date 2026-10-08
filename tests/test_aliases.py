@@ -24,7 +24,7 @@ class AliasTests(unittest.TestCase):
 
     def check_shells(self, aliases):
         names = ("mpf", "mpj", "mpn", "mssh", "mpp", "mp", "mr", "mgit", "mrg")
-        commands = ("fd", "just", "node", "ssh", "python3", None, "run", "git", "rg")
+        commands = ("fd", "just", "node", "ssh", "python3", None, None, "git", "rg")
         arguments = ["space value", "", "--time-limit", "2s"]
         for shell in ("bash", "zsh"):
             with self.subTest(shell=shell):

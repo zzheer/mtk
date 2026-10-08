@@ -7,10 +7,10 @@ memory, and time limits. Keep everyday terminal output compact while retaining
 complete wrapped output for investigating failures.
 
 ```bash
-mtk COMMAND ... [resource and display limits]
+mtk COMMAND [ARGS] [-- MTK OPTIONS]
 mtk git status
-mtk npm test --time-limit 60s --memory-limit 2G --cpu-limit 100
-mtk python3 script.py --no-truncate
+mtk npm test -- --time 60s --memory 2G --cpu 100
+mtk bun script.ts -- --no-truncate
 ```
 
 [Install](#install) · [Try it](#try-it) · [Output and logs](#output-and-logs) ·
@@ -42,7 +42,7 @@ source-checkout wrapper or CPU helper under your home directory is required.
 Print eight lines with a three-line display limit:
 
 ```bash
-mtk python3 -c 'for i in range(1, 9): print(f"line {i}")' --max-lines 3
+mtk bun -e 'for (let i = 1; i <= 8; i++) console.log(`line ${i}`)' -- --max-lines 3
 ```
 
 Displayed output:
@@ -50,13 +50,13 @@ Displayed output:
 ```text
 line 1
 line 2
-line 3
+line 8
 [truncated by mtk]
 
 /tmp/mtk-<unique-id>.log
 ```
 
-The marker shows where MTK stopped displaying output. The final path is
+The marker indicates output was omitted. The final path is
 printed on **stderr**. Open that file to see all eight lines; the log has
 neither the marker nor the filepath footer.
 
@@ -67,42 +67,44 @@ mtk ls .
 mtk git diff
 mtk cargo test
 mtk just test
-mtk python3 script.py
+mtk bun script.ts
 ```
 
 Use native handlers for Git, ripgrep, GitHub CLI, tests, and builds to retain
 RTK's summaries. Unknown commands execute directly, preserving their output
 and exit status within MTK's display and resource limits, so `mtk just`,
-`mtk python3`, and `mtk fd` work directly.
+`mtk bun`, and `mtk fd` work directly.
 Interactive passthrough keeps a terminal attached.
 
 ## Output and logs
 
-The default display limit is **200 lines or 32 KiB per stream**, whichever
-comes first. MTK keeps draining output after the display limit and writes it
-to a unique private `/tmp/mtk-*.log` with permissions `0600`.
+Default output caps share one budget across stdout and stderr: **80 lines,
+1500 words, 8000 Unicode characters, and 32 KiB**. Clipped output keeps the
+up to the first 40 and last 40 lines. The tail may be absent if the head
+consumes the shared word, character, or byte budget. MTK keeps draining output
+after the display limit and writes it to a unique private `/tmp/mtk-*.log` with
+permissions `0600`.
 
-- Each MTK clipping region gets the exact marker `[truncated by mtk]`.
-- The log contains only bytes emitted by the wrapped command.
-- stdout and stderr are captured in observed arrival order, without labels.
+- Clipped output gets one exact `[truncated by mtk]` marker after its tail.
+- The log retains complete raw wrapped-command output.
+- stdout and stderr share the display budget and are captured in observed arrival order, without labels.
 - The log filepath prints last on stderr, after output drains.
 - Normal exit codes and shell-compatible signal statuses are preserved.
 - Capture failures are reported explicitly.
 
 **Complete means complete wrapped output.** If RTK already summarized or
-removed text, MTK cannot reconstruct it. See [Exact output](#exact-output) when
-you need the command's unsummarized output.
+removed text, MTK cannot reconstruct it. Run the underlying command directly
+when you need its unsummarized output.
 
-Noninteractive execution uses separate stdout/stderr pipes and separate display
-budgets. When stdin, stdout, and stderr are terminals, MTK uses a PTY: combined
-terminal output shares one display budget. stdin, signals, and resize are
-forwarded.
+Noninteractive stdout and stderr share one display budget. When stdin, stdout,
+and stderr are terminals, MTK uses a PTY. Output order follows observed arrival;
+stdin, signals, and resize are forwarded.
 
-Append display limits to the command (legacy prefix flags also work):
+Put display options after the final `--`:
 
 ```bash
-mtk git diff --max-lines 500 --max-bytes 128KiB
-mtk python3 script.py --no-truncate
+mtk git diff -- --max-lines 500 --max-bytes 128KiB
+mtk bun script.ts -- --no-truncate
 ```
 
 **For JSON and other machine-readable pipelines, use `--no-truncate`.**
@@ -112,19 +114,6 @@ and the stderr footer remain enabled.
 Display limits do not limit log size. `/tmp` logs can contain sensitive command
 output; manage retention and available disk space separately.
 
-### Exact output
-
-Use `mtk run COMMAND ...` to execute raw argv without command-specific RTK
-summaries, while retaining MTK logging and resource limits:
-
-```bash
-mtk run git diff --no-truncate --time-limit 30s
-```
-
-The log records all emitted output; it cannot recover content removed by a
-native RTK summary. `run` bypasses that summary. The stderr log filepath footer
-still prints.
-
 ## Global config
 
 Create `~/.config/mtk/config.json` to set display defaults. If `XDG_CONFIG_HOME`
@@ -132,7 +121,7 @@ is set, MTK reads `$XDG_CONFIG_HOME/mtk/config.json` instead.
 
 ```json
 {
-  "max_lines": 200,
+  "max_lines": 80,
   "max_bytes": "32KiB",
   "truncate": true
 }
@@ -156,35 +145,24 @@ CLI options.
 Bound a workload independently of how much output you display:
 
 ```bash
-mtk python3 worker.py --time-limit 60s --memory-limit 2G --cpu-limit 100
-mtk cargo build --time-limit=5m --mem-limit=2G --cpu-limit=100
+mtk bun worker.ts -- --time 60s --memory 2G --cpu 100
+mtk cargo build -- --time=5m --memory=2G --cpu=100
 ```
 
-- `--time-limit DURATION`: terminate the workload at its deadline.
-- `--memory-limit SIZE` (alias `--mem-limit`): terminate when sampled total workload RSS exceeds the limit.
-- `--cpu-limit PERCENT`: limit CPU use, including descendants by default.
-- `--exclude-children`: apply the CPU limit to the root process only.
+- `--time DURATION`: timeout; disabled by default and always covers descendants.
+- `--memory SIZE`: sampled workload memory limit; disabled by default and covers descendants.
+- `--cpu PERCENT`: CPU limit, disabled by default and includes descendants.
+- `--root-only`: restrict CPU limiting to the root process; false by default.
+- `--max-lines`, `--max-bytes`, `--no-truncate`: output controls; defaults are 80 lines and 32 KiB, with truncation enabled. Fixed caps also limit display to 1500 words and 8000 Unicode characters across both streams, even when `--max-lines` or `--max-bytes` is raised. `--no-truncate` disables all display caps.
 
-Resource flags and display flags (`--max-lines`, `--max-bytes`,
-`--no-truncate`) are extracted only from a final contiguous MTK flag suffix
-after the command and its arguments. Value flags accept separate values or `=VALUE`.
-Legacy prefix flags still work; repeated limits use the last value, and suffix
-values override prefix values. A standalone `--` anywhere after `COMMAND`
-disables suffix extraction for that invocation and preserves the wrapped
-arguments:
+Put MTK options after the final `--`; value options accept a separate value or
+`=VALUE`. Output and singleton flags can also appear in this block. Output
+defaults can be overridden in global config. Earlier `--` separators remain
+child arguments; the final delimiter starts the MTK block:
 
 ```bash
-mtk --time-limit 60s python3 worker.py --time-limit 30s
-mtk python3 worker.py -- --time-limit 30s
-```
-
-The first command has a 30-second MTK limit. The second passes the arguments
-through without extracting MTK flags. Singleton flags remain prefix-only.
-Keep all trailing MTK flags together at the end:
-
-```bash
-mtk python3 worker.py --time-limit 60s --max-lines 100 --cpu-limit 50
-mtk run tool -- --max-lines 100 # Pass --max-lines through to tool
+mtk bun worker.ts --child-option value -- --time 60s --memory 2G --cpu 100
+mtk tool -- --child-option -- --max-lines 100
 ```
 
 CPU percentage uses one logical core as `100`; `50` means half a core.
@@ -194,12 +172,12 @@ Requested CPU enforcement fails explicitly if the limiter is unavailable.
 
 Avoid nesting CPU-limited MTK commands: independent stop/resume controllers
 can interfere with each other. When running the governor test suite, apply
-`--exclude-children` to the outer test runner so each regression owns its CPU
+`--root-only` to the outer test runner so each regression owns its CPU
 controller; retain the outer timeout and memory limits.
 
 Memory is checked periodically; this is a termination threshold, not a hard
 allocation cap. Timeout and memory cleanup cover the full workload, including
-descendants, even with `--exclude-children`. MTK waits for cleanup and escalates
+descendants, even with `--root-only`. MTK waits for cleanup and escalates
 surviving processes to SIGKILL. Timeout returns `124`; memory breach returns
 `137`. With child exclusion, the root may be a shell or RTK wrapper, leaving
 the actual worker uncapped.
@@ -230,33 +208,19 @@ after their root exits. Sampling can miss rapid detach/reparent operations
 between samples, or descendants born after observers exit; tracking is not an
 absolute guarantee of finding every detached process.
 
-## Search and fetch
-
-Search uses the separately published
-[duckduckgo-tools](https://github.com/zzheer/duckduckgo-tools) Homebrew dependency:
-
-```bash
-mtk search-web "Rust ownership" --limit 5
-mtk --no-truncate search-web "Rust ownership" --limit 5 --json
-```
-
-MTK calls the installed provider executable. No bundled source checkout or
-Instant Answer fallback is used. A missing provider returns an actionable
-nonzero error. Network access and provider availability are required.
+## Fetch
 
 Fetch web content as Markdown:
 
 ```bash
-mtk --time-limit 45s fetch https://example.com -o page.md
-mtk markitdown document.pdf -o document.md
+mtk fetch https://example.com -o page.md -- --time 45s
 ```
 
 Fetch rejects HTTP errors and recognized challenge content, then tries available
 fallbacks. If no attempt yields accepted content, it returns nonzero and preserves
 an existing destination file.
-Local fetching/conversion can fall back to the remote Jina service; this is
-not a guarantee of browser or JavaScript rendering. MarkItDown runs through
-an installed binary or `uvx`.
+Local fetching can fall back to the remote Jina service; this is not a
+guarantee of browser or JavaScript rendering.
 
 ## Shell shortcuts and agents
 
@@ -270,7 +234,7 @@ eval "$(mtk env)"
 Examples: `mgit` → `mtk git`, `mrg` → `mtk rg`, `mpf` → `mtk fd`,
 `mpj` → `mtk just`, `mpn` → `mtk node`, `mssh` → `mtk ssh`.
 The standalone `mpp` command runs `mtk python3`.
-`mp` is an alias for `mtk`; `mr` remains `mtk run`.
+`mp` is an alias for `mtk`; `mr` is a short alias for `mtk`.
 
 The public [MTK agent guide](MTK.md) describes commands, limits, logs, and when
 direct execution is appropriate. For global agent instructions, use the
@@ -307,7 +271,7 @@ helpers, filters, source files, and the private limiter build. Generate a local
 archive and formula with:
 
 ```bash
-mtk ./scripts/release.sh 0.2.2 --local
+mtk ./scripts/release.sh 0.3.5 --local
 ```
 
 For a published formula, pass `--url` with its exact HTTPS source archive URL.
@@ -323,4 +287,4 @@ See [CHANGELOG.md](CHANGELOG.md) for changes.
 MTK's own source is [MIT licensed](LICENSE). The vendored CPU limiter retains
 its [GPL-2.0-or-later license](vendor/cpulimit/COPYING) and
 [provenance](vendor/cpulimit/PROVENANCE.md). The Homebrew formula declares both.
-RTK provides command summaries; duckduckgo-tools provides web search.
+RTK provides command summaries.

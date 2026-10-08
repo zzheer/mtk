@@ -56,8 +56,6 @@ discover Discover missed RTK savings from Claude Code history
 session Show RTK adoption across Claude Code sessions
 telemetry Manage telemetry consent and data (RGPD/GDPR)
 learn Learn CLI corrections from Claude Code error history
-run Execute a shell command via sh -c (raw, no filtering or tracking)
-proxy Execute command without filtering but track usage
 recall Recall output a filter elided, by content hash
 pipe Read stdin, apply filter, print filtered output (Unix pipe mode)
 trust Trust project-local TOML filters in current directory

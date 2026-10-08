@@ -50,7 +50,7 @@ class InspectionFailureRegression(unittest.TestCase):
                       'pathlib.Path(os.environ["INSPECTION_READY"]).write_text(str(os.getpid())); '
                       'time.sleep(20)']
             command = ([sys.executable, str(SOURCE / 'libexec/mtk-runner.py'), '--']
-                       if standalone else [str(SOURCE / 'bin/mtk'), 'run']) + worker
+                       if standalone else [str(SOURCE / 'bin/mtk')]) + worker
             env = {**os.environ, 'PATH': str(fakebin) + ':' + os.environ['PATH'],
                    'XDG_STATE_HOME': str(state), 'XDG_CONFIG_HOME': str(fixture / 'config'),
                    'INSPECTION_READY': str(ready), 'PYTHONDONTWRITEBYTECODE': '1'}

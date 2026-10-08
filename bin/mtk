@@ -139,19 +139,18 @@ fi
 # Prefer command-first syntax with trailing MTK limits.
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<'EOF'
-Usage: mtk COMMAND [ARGS] [MTK LIMITS]
-Resource and display limits work as a final block after ARGS. Legacy prefix
-options remain supported; final values override prefix values.
-A standalone -- after COMMAND preserves wrapped arguments without extraction.
+Usage: mtk COMMAND [ARGS] -- [MTK OPTIONS]
+Place MTK options after the final --. Omit the separator when no options are needed.
+For example: mtk bun worker.ts -- --time 60s --memory 2G --cpu 100
 
 MTK output and resource options:
-  --max-lines N         Display at most N lines per stream (default: 200)
-  --max-bytes SIZE      Display at most SIZE bytes per stream (default: 32KiB)
+  --max-lines N         Head + tail line budget (default: 80, split 40 + 40)
+  --max-bytes SIZE      Combined byte ceiling (default: 32KiB)
   --no-truncate         Display all wrapped output; still write complete log
-  --time-limit DURATION Terminate entire workload at deadline
-  --memory-limit SIZE   Limit total workload RSS
-  --cpu-limit PERCENT   Limit CPU, including children by default
-  --exclude-children    Apply CPU limit to root process only
+  --time DURATION       Deadline (default: off; e.g. 60s, 5m)
+  --memory SIZE         Total workload RSS (default: off; e.g. 2G)
+  --cpu PERCENT         CPU cap (default: off; 100 = one core)
+  --root-only           CPU cap excludes descendants (default: false)
   --singleton[=NAME]    Replace previous workload with same name
   --singleton-wait[=NAME] Wait for previous workload
 
@@ -161,6 +160,9 @@ Workload management:
 
 Defaults read from $XDG_CONFIG_HOME/mtk/config.json or ~/.config/mtk/config.json.
 JSON keys: max_lines, max_bytes, truncate. CLI output flags override settings.
+Combined displayed workload: at most 1,500 words and 8,000 Unicode characters,
+including newlines. The first head lines stream; tail lines appear at completion.
+Truncation is enabled by default. Markers and the log footer are additional metadata.
 Every invocation saves wrapped output only to a private /tmp/mtk-*.log.
 MTK marks clipped output with [truncated by mtk]; log filepath prints last
 on stderr. RTK summaries remain unchanged in the log.
@@ -175,7 +177,7 @@ if [[ "${1:-}" == "env" || "${1:-}" == "init" ]]; then
     exit 0
   else
     cat <<'EOF'
-alias mr='mtk run'
+alias mr='mtk'
 alias mpf='mtk fd'
 alias mrg='mtk rg'
 alias md='mtk docker'
@@ -191,7 +193,6 @@ alias mpe='mtk pnpm exec'
 alias mnpm='mtk npm'
 alias mnpx='mtk npx'
 alias mssh='mtk ssh'
-alias mmd='mtk markitdown'
 mpp() { mtk python3 "$@"; }
 EOF
     exit 0
@@ -233,23 +234,6 @@ if [[ "${1:-}" == "doctor" ]]; then
   else
     echo "  [✗] mtk-cpulimit (not built; reinstall mtk with Homebrew)"
   fi
-  if command -v duckduckgo-tools >/dev/null 2>&1; then
-    echo "  [✓] duckduckgo-tools ($(command -v duckduckgo-tools))"
-  else
-    echo "  [✗] duckduckgo-tools (install: brew install zzheer/tap/duckduckgo-tools)"
-  fi
-
-  # Check markitdown
-  if command -v markitdown >/dev/null 2>&1; then
-    echo "  [✓] markitdown ($(command -v markitdown))"
-  elif command -v uvx >/dev/null 2>&1; then
-    echo "  [✓] markitdown (available via uvx markitdown)"
-  elif [[ -n "$PYTHON_BIN" ]] && "$PYTHON_BIN" -c "import markitdown" >/dev/null 2>&1; then
-    echo "  [✓] markitdown (available via $PYTHON_BIN -m markitdown)"
-  else
-    echo "  [✗] markitdown (not found; install via: uv tool install markitdown)"
-  fi
-
   # Check jina-reader-cli (optional cloud fallback)
   if command -v jina-reader-cli >/dev/null 2>&1; then
     echo "  [✓] jina-reader-cli ($(command -v jina-reader-cli))"

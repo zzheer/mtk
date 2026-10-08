@@ -10,8 +10,7 @@
     "python@3.12",
     "ripgrep",
     "rtk",
-    "uv",
-    "zzheer/tap/duckduckgo-tools"
+    "uv"
   ],
   "install": {
     "libexec": [

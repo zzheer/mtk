@@ -4,7 +4,7 @@
 # or:
 #   source $(brew --prefix)/share/mtk/mtk-aliases.sh
 
-alias mr='mtk run'
+alias mr='mtk'
 alias mpf='mtk fd'
 alias mrg='mtk rg'
 alias md='mtk docker'
@@ -20,7 +20,6 @@ alias mpe='mtk pnpm exec'
 alias mnpm='mtk npm'
 alias mnpx='mtk npx'
 alias mssh='mtk ssh'
-alias mmd='mtk markitdown'
 
 # Python helper function
 mpp() {

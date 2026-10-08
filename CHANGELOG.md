@@ -1,14 +1,21 @@
 # Changelog
 
-## Unreleased
+## 0.3.5
 
+- Document command-first MTK options after the final `--`, including disabled
+  resource-limit defaults and the combined output caps: 80 lines, 1500 words,
+  8000 Unicode characters, and a shared 32 KiB cap with head and tail context.
+- Keep legacy command handlers available internally without listing them as public commands.
+- Keep the external provider optional; return a clear 404 when its endpoint is missing.
+
+## Unreleased
 - Clean governed workers after outer initial process discovery fails, including
   failures during governor initialization and near-timeout snapshots. Install
   governor signal handlers before worker creation and bound emergency grace.
 
 - Preserve outer capture SIGTERM status when process discovery is interrupted,
   while reporting incomplete capture and restoring terminal state.
-- Remove obsolete proxy dispatch from the root Python shell helper and cover
+- Remove obsolete command dispatch from the root Python shell helper and cover
   argument preservation in Bash and Zsh.
 
 - Keep emergency cleanup available when process discovery fails, restore
@@ -22,8 +29,6 @@
   polling limitations.
 - Accept display limits alongside resource limits at the end of commands,
   and preserve last-value precedence before native RTK global options.
-- Remove the public `proxy` command; use automatic dispatch or `mtk run`.
-  Reject it behind native global flags and remove its inherited RTK help entry.
 - Limit CPU-heavy grandchildren on Darwin and reset CPU history on PID reuse.
   Document interference between independently nested CPU controllers.
 - Finish workload cleanup after live or initial job-record failures, and
@@ -32,10 +37,10 @@
 - Package the job registry helper through the shared installation manifest;
   exercise installed helpers and management commands in Homebrew tests.
 - Accept time, memory, and CPU limits as a final command suffix while preserving
-  native RTK dispatch, prefix syntax, and last-value precedence. Use `--` after
-  the command to protect tool-owned flags from suffix extraction.
+  native RTK dispatch and last-value precedence. Use the final `--` to separate
+  child arguments from MTK options.
 - Route everyday aliases and Python helpers through automatic dispatch, and
-  document command-first limits with explicit `run` dispatch.
+  document command-first limits after the final `--`.
 - Read global config as UTF-8 and cover symlink-to-regular success plus device
   and FIFO rejection with a specific stderr assertion; invalid UTF-8 bytes fail
   closed before the wrapped command. Directories and other nonregular paths are
@@ -68,6 +73,5 @@
 - Preserve interactive terminals, input, signals, and resize through resource governance.
 - Reject failed or invalid fetch responses without replacing an existing output file.
 - Allow noninteractive, idempotent Codex hook configuration while preserving other hook commands.
-- Use independently published Homebrew `duckduckgo-tools` for search; remove bundled source and hidden fallback.
 - Keep package dependencies, installed helpers, licensed source, and release archive checksums consistent.
 - Publish a pinned source archive checksum for reproducible Homebrew installation.
