@@ -4,7 +4,7 @@ class Mtk < Formula
   desc "Bounded CLI and developer toolkit with RTK summaries"
   homepage "https://github.com/zzheer/mtk"
   url "https://api.github.com/repos/zzheer/mtk/tarball/84dc1cf9d5d641c25177a2c5a8bbbf6547e1b717"
-  version "0.3.5"
+  version "0.3.6"
   sha256 "4b3d829ae46f5642b1c21bec979e52caafc6cdd9d87f61d8ef814022e0dcf1bc"
   license all_of: ["MIT", "GPL-2.0-or-later"]
 
@@ -19,11 +19,12 @@ class Mtk < Formula
   depends_on "ripgrep"
   depends_on "rtk"
   depends_on "uv"
+  depends_on "zx"
 
   def install
     system "bash", "-c", "ulimit -t 120; exec make -j2 -C vendor/cpulimit/src CFLAGS='-Wall -O2 -D_GNU_SOURCE'"
     libexec.install "vendor/cpulimit/src/cpulimit" => "mtk-cpulimit"
-    libexec.install "libexec/mtk-ai", "libexec/mtk-media", "libexec/mtk-core.sh", "libexec/mtk-runner.py", "libexec/mtk-output.py", "libexec/mtk-search", "libexec/mtk-fetch", "libexec/mtk_jobs.py"
+    libexec.install "libexec/mtk-ai", "libexec/mtk-media", "libexec/mtk-core.sh", "libexec/mtk-runner.py", "libexec/mtk-output.py", "libexec/mtk-codex-hook.py", "libexec/mtk-search", "libexec/mtk-fetch", "libexec/mtk_jobs.py"
     bin.install "bin/mtk", "bin/mpp"
     pkgshare.install "share/mtk/mtk-aliases.sh", "share/mtk/justfile", "share/mtk/filters.toml", "vendor/cpulimit/COPYING", "vendor/cpulimit/LICENSE", "vendor/cpulimit/PROVENANCE.md"
     rewrite_shebang detected_python_shebang, libexec/"mtk-ai", libexec/"mtk-media", libexec/"mtk-runner.py", libexec/"mtk-output.py"
@@ -57,6 +58,9 @@ class Mtk < Formula
     assert_match "No active MTK jobs", shell_output("#{bin}/mtk jobs 2>&1", 0)
     assert_match "Stopped 0 MTK jobs", shell_output("#{bin}/mtk stop --all 2>&1", 0)
     assert_predicate libexec/"mtk_jobs.py", :file?
+    assert_predicate libexec/"mtk-codex-hook.py", :file?
+    (testpath/"zx-smoke.mjs").write("$.verbose = false; console.log((await $`printf zx_ok`).stdout)")
+    assert_match "zx_ok", shell_output("#{bin}/mtk zx #{testpath}/zx-smoke.mjs 2>&1", 0)
     assert_match "Usage: mtk fetch", shell_output("#{bin}/mtk fetch --help 2>&1", 0)
   end
 end

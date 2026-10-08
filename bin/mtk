@@ -218,7 +218,7 @@ fi
 # Subcommand: mtk doctor
 if [[ "${1:-}" == "doctor" ]]; then
   echo "Checking mtk dependencies:"
-  for dep in rtk python3 node pnpm bun rg fd gh just ast-grep uv curl-cffi; do
+  for dep in rtk python3 node pnpm bun rg fd gh just ast-grep uv zx curl-cffi; do
     if command -v "$dep" >/dev/null 2>&1; then
       path="$(command -v "$dep")"
       echo "  [✓] $dep ($path)"
@@ -287,7 +287,7 @@ if [[ "${1:-}" == "hook" && "${2:-}" == "codex" ]]; then
           cat <<'EOF'
 Usage: mtk hook codex [OPTIONS]
 
-Configure Codex CLI PreToolUse hook pointing to 'rtk hook codex'.
+Configure Codex CLI PreToolUse rewrites through MTK.
 
 Options:
   -g, --global   Configure global hooks in ~/.codex/hooks.json (default)
@@ -318,8 +318,9 @@ EOF
     fi
 
     "$PYTHON_BIN" -c '
-import json, sys, os
+import json, sys, os, shlex
 hook_file = sys.argv[1]
+hook_command = shlex.join([sys.argv[2], sys.argv[3]])
 data = {}
 if os.path.isfile(hook_file):
     try:
@@ -336,10 +337,25 @@ pre_tool = hooks.setdefault("PreToolUse", [])
 exists = False
 for entry in pre_tool:
     if isinstance(entry, dict) and entry.get("matcher") == "Bash":
+        retained = []
         for h in entry.get("hooks", []):
-            if isinstance(h, dict) and "rtk hook codex" in h.get("command", ""):
+            command = h.get("command", "") if isinstance(h, dict) else ""
+            try:
+                args = shlex.split(command)
+            except ValueError:
+                args = []
+            legacy = args[:3] == ["rtk", "hook", "codex"] and all(
+                arg in {"--ultra-compact", "--skip-env"} for arg in args[3:])
+            adapter = len(args) >= 2 and os.path.basename(args[1]) == "mtk-codex-hook.py"
+            owned = legacy or adapter
+            if owned:
+                if exists:
+                    continue
+                options = args[3:] if legacy else args[2:]
+                h["command"] = shlex.join([sys.argv[2], sys.argv[3], *options])
                 exists = True
-                break
+            retained.append(h)
+        entry["hooks"] = retained
 
 if not exists:
     pre_tool.append({
@@ -347,7 +363,7 @@ if not exists:
         "hooks": [
             {
                 "type": "command",
-                "command": "rtk hook codex"
+                "command": hook_command
             }
         ]
     })
@@ -355,7 +371,7 @@ if not exists:
 with open(hook_file, "w", encoding="utf-8") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
-' "$hook_file"
+' "$hook_file" "$PYTHON_BIN" "$LIBEXEC_DIR/mtk-codex-hook.py"
 
     echo "mtk: successfully configured Codex hook in $hook_file"
     exit 0

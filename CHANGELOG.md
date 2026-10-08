@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.6
+
+- Configure Codex hooks with a private MTK adapter, retaining RTK's supported
+  command decisions while rewriting through MTK's output caps and logging.
+- Migrate the legacy RTK handler without duplicating hooks or changing unrelated
+  handlers. Require trust review for the new hook definition in Codex.
+- Add zx as an MTK dependency and document `mtk zx` shell orchestration within
+  MTK's output and workload limits.
+
 ## 0.3.5
 
 - Document command-first MTK options after the final `--`, including disabled

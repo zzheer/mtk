@@ -250,8 +250,11 @@ removed cannot be recovered. `--no-truncate` still logs output and prints the
 filepath. Display limits do not cap log size; manage retention and storage
 separately.
 
-Codex resolves Homebrew `/opt/homebrew/bin/mtk` through PATH. Existing hooks
-need not be enabled; verify `command -v mtk` and `mtk --help` from its shell.
+Codex resolves Homebrew `/opt/homebrew/bin/mtk` through PATH. Optional
+`mtk hook codex` setup migrates the legacy RTK hook to a private MTK adapter;
+review and trust it in Codex's `/hooks` screen. Supported commands, including
+already-prefixed RTK commands, are rewritten through MTK. Existing MTK commands
+are unchanged. Verify `command -v mtk` and `mtk --help` from its shell.
 
 ## Advanced exact output
 
@@ -265,6 +268,13 @@ Prefer `mtk bun` for everyday tasks when Bun is appropriate.
 Prefer `mtk fd` over `find`. Prefer `mtk rg` over `grep`.
 Any unknown command not recognized as an internal mtk or native rtk subcommand
 executes directly with its output and exit status preserved within MTK limits.
+
+For shell orchestration, use `mtk zx ./scripts/task.mjs`; this runs zx with its
+own runtime. Use zx's tagged command templates with interpolated values instead
+of building shell command strings by concatenation. Keep MTK as the outer
+command so the script and its child processes remain within that MTK
+invocation's output and workload limits. Use `mtk bun` for ad hoc scripts and
+file processing that do not need shell orchestration.
 
 # Aliases
 

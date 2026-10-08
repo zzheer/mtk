@@ -19,11 +19,20 @@ mtk bun script.ts -- --no-truncate
 
 ## Install
 
-Homebrew installs MTK and its declared dependencies:
+Homebrew installs MTK and its declared dependencies, including `zx` for
+JavaScript-based shell orchestration:
 
 ```bash
 brew install zzheer/tap/mtk
 mtk doctor
+```
+
+Use `mtk zx` for shell orchestration with zx's own runtime. Use `mtk bun` for
+ad hoc scripts and file processing:
+
+```bash
+mtk zx ./scripts/task.mjs
+mtk bun ./scripts/process-data.ts
 ```
 
 Already installed?
@@ -250,8 +259,12 @@ mtk hook codex          # Global ~/.codex/hooks.json
 mtk hook codex --local  # Project .codex/hooks.json
 ```
 
-Setup preserves existing hook entries and is idempotent. Using MTK from the
-shell does not require enabling currently disabled Codex hooks.
+Setup preserves unrelated hook entries, replaces the legacy RTK handler, and is
+idempotent. The private adapter retains RTK's supported-command decisions and
+rewrites through MTK, so both `git status` and `rtk git status` become
+`mtk git status`. Commands already using MTK are unchanged. Review and trust the
+new or changed hook in Codex's `/hooks` screen before relying on it. Hook protocol
+JSON bypasses output capture; rewritten workloads retain MTK's caps and logs.
 
 ## Development and releases
 
