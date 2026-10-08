@@ -3,9 +3,9 @@ class Mtk < Formula
 
   desc "Bounded CLI and developer toolkit with RTK summaries"
   homepage "https://github.com/zzheer/mtk"
-  url "https://api.github.com/repos/zzheer/mtk/tarball/84dc1cf9d5d641c25177a2c5a8bbbf6547e1b717"
+  url "https://api.github.com/repos/zzheer/mtk/tarball/efffd4a0499c9aae607df76f062259b93f6a739e"
   version "0.3.6"
-  sha256 "4b3d829ae46f5642b1c21bec979e52caafc6cdd9d87f61d8ef814022e0dcf1bc"
+  sha256 "2227e378e4dc5fca876f283d39878a1a1de60301c347762f59e734f5893bfbcd"
   license all_of: ["MIT", "GPL-2.0-or-later"]
 
   depends_on "ast-grep"
