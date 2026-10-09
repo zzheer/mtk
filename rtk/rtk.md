@@ -85,7 +85,6 @@ rtk summary <cmd> [args...] # Direct argv execution + heuristic summary
 rtk run <cmd> [args...] # Raw direct execution (no filtering/tracking)
 rtk run -c '<script>' # Shell string via sh (cmd on Windows)
 rtk run --shell fish -c '<script>' # Explicit shell for shell-specific syntax
-rtk proxy <command> # Raw passthrough + tracking
 
 ## Token Savings Analytics
 

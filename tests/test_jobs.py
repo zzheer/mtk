@@ -106,12 +106,12 @@ class JobsTests(unittest.TestCase):
         result = self.invoke('jobs', '--cpu-limit', '0')
         self.assertEqual(result.returncode, 2, result.stderr)
 
-    def test_removed_proxy_command_fails_explicitly(self):
-        for prefix in ([], ['--verbose'], ['--ultra-compact'], ['help']):
+    def test_proxy_command_executes_under_legacy_prefixes(self):
+        for prefix in ([], ['--verbose'], ['--ultra-compact']):
             with self.subTest(prefix=prefix):
-                result = self.invoke(*prefix, 'proxy', sys.executable, '-c', "print('MUST_NOT_RUN')")
-                self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertNotIn('MUST_NOT_RUN', result.stdout)
+                result = self.invoke(*prefix, 'proxy', sys.executable, '-c', "print('PROXY_RAN')")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('PROXY_RAN', result.stdout)
 
     def test_stop_all_kills_resistant_workload_and_child_without_killing_unrelated_process(self):
         ready = self.folder / 'ready'

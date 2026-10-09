@@ -218,8 +218,9 @@ class OutputTests(unittest.TestCase):
     def test_help_exposes_output_and_governor_flags(self):
         result = subprocess.run([MTK, "--help"], capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotRegex(result.stdout, rb'(?m)^\s+proxy\s+')
-        for flag in (b"--max-lines", b"--max-bytes", b"--no-truncate", b"--exclude-children"):
+        self.assertNotRegex(result.stdout, rb'(?m)^\s+(?:proxy|run)\s+')
+        for flag in (b"--max-lines", b"--max-bytes", b"--no-truncate", b"--time",
+                     b"--memory", b"--cpu", b"--root-only"):
             self.assertIn(flag, result.stdout)
 
     def run_mtk(self, script, flags=()):
@@ -243,8 +244,26 @@ class OutputTests(unittest.TestCase):
     def test_line_limit_has_marker_and_complete_log(self):
         result, log = self.run_mtk("print('one\\ntwo\\nthree')", ["--max-lines", "2"])
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, b"one\ntwo\n[truncated by mtk]\n")
+        self.assertEqual(result.stdout, b"one\nthree\n[truncated by mtk]\n")
         self.assertEqual(log, b"one\ntwo\nthree\n")
+
+    def test_default_line_limit_boundaries(self):
+        for count in (40, 41, 80, 81):
+            with self.subTest(count=count):
+                result, log = self.run_mtk(
+                    "print('\\n'.join(f'line-{i}' for i in range(%d)))" % count)
+                self.assertEqual(result.returncode, 0)
+                expected = ([f"line-{i}".encode() for i in range(count)]
+                            if count <= 80 else
+                            [f"line-{i}".encode() for i in range(40)] +
+                            [f"line-{i}".encode() for i in range(41, 81)])
+                displayed = [line for line in result.stdout.splitlines()
+                             if line != b"[truncated by mtk]"]
+                self.assertEqual(displayed, expected)
+                self.assertEqual(b"[truncated by mtk]" in result.stdout,
+                                 count == 81)
+                self.assertEqual(log, b"".join(
+                    f"line-{i}\n".encode() for i in range(count)))
 
     def test_byte_limit_preserves_utf8(self):
         result, log = self.run_mtk("print('ééé',end='')", ["--max-bytes", "5"])
@@ -266,14 +285,176 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(result.stderr.splitlines()[0], b"err")
         self.assertIn(log, (b"out\nerr\n", b"err\nout\n"))
 
+    def test_character_cap_is_combined_across_streams_and_log_is_complete(self):
+        result, log = self.run_mtk(
+            "import os; os.write(1,b'a'*5000); os.write(2,b'b'*5000)")
+        self.assertEqual(result.returncode, 0)
+        stderr_display = re.sub(rb"(?m)^/tmp/mtk-[^\r\n]+\.log\r?\n?$", b"",
+                                result.stderr)
+        visible = (result.stdout + stderr_display).replace(b"[truncated by mtk]\n", b"")
+        self.assertEqual(visible.count(b"a") + visible.count(b"b"), 8000)
+        self.assertIn(b"[truncated by mtk]", result.stdout + result.stderr)
+        self.assertIn(b"a" * 5000, log)
+        self.assertIn(b"b" * 5000, log)
+
+    def test_byte_override_is_combined_across_streams(self):
+        result, log = self.run_mtk(
+            "import os; os.write(1,b'a'*9); os.write(2,b'b'*9)",
+            ["--max-bytes", "12"])
+        self.assertEqual(result.returncode, 0)
+        stderr_display = re.sub(rb"(?m)^/tmp/mtk-[^\r\n]+\.log\r?\n?$", b"",
+                                result.stderr)
+        visible = (result.stdout + stderr_display).replace(b"[truncated by mtk]\n", b"")
+        self.assertEqual(visible.count(b"a") + visible.count(b"b"), 12)
+        self.assertEqual(len(re.findall(rb"\[truncated by mtk\]", result.stdout + result.stderr)), 1)
+        self.assertIn(b"a" * 9, log)
+        self.assertIn(b"b" * 9, log)
+
+    def test_character_cap_counts_unicode_characters_and_preserves_utf8(self):
+        for count in (8000, 8001):
+            with self.subTest(count=count):
+                result, log = self.run_mtk("print('é'*%d,end='')" % count)
+                self.assertEqual(result.returncode, 0)
+                displayed = result.stdout.decode("utf-8")
+                marker = "\n[truncated by mtk]\n"
+                self.assertEqual(marker in displayed, count == 8001)
+                payload = displayed.replace(marker, "")
+                self.assertEqual(payload, "é" * min(count, 8000))
+                self.assertEqual(log.decode("utf-8"), "é" * count)
+
+    def test_newline_counts_toward_global_character_cap(self):
+        result, log = self.run_mtk("print('x'*7999+'\\nZ',end='')")
+        self.assertEqual(result.stdout, b"x" * 7999 + b"\n[truncated by mtk]\n")
+        self.assertEqual(log, b"x" * 7999 + b"\nZ")
+
+    def test_word_cap_and_complete_log(self):
+        for count in (1500, 1501):
+            with self.subTest(count=count):
+                result, log = self.run_mtk(
+                    "print(' '.join(['word']*%d))" % count)
+                self.assertEqual(result.returncode, 0)
+                stderr_display = re.sub(
+                    rb"(?m)^/tmp/mtk-[^\r\n]+\.log\r?\n?$", b"", result.stderr)
+                displayed = (result.stdout + b" " + stderr_display).replace(
+                    b"[truncated by mtk]\n", b"")
+                self.assertEqual(len(displayed.split()), min(count, 1500))
+                self.assertEqual(b"[truncated by mtk]" in result.stdout,
+                                 count == 1501)
+                self.assertEqual(log, b" ".join([b"word"] * count) + b"\n")
+
+    def test_display_merges_interleaved_partial_lines_without_stream_separator(self):
+        stdout, stderr = object(), object()
+        merged = bytearray()
+        writes = []
+
+        class Sink:
+            def __init__(self, name):
+                self.name = name
+
+            def write(self, data):
+                data = bytes(data)
+                writes.append((self.name, data))
+                merged.extend(data)
+
+            def flush(self):
+                pass
+
+        display = output.Display(2, 32768, True)
+        display.sinks = {stdout: Sink("stdout"), stderr: Sink("stderr")}
+        display.write(stdout, b"A")
+        display.write(stderr, b"B\n")
+        display.write(stdout, b"C\n")
+        display.finish()
+
+        self.assertEqual(bytes(merged), b"AB\nC\n")
+        self.assertEqual(display.lines, 2)
+        self.assertEqual(writes, [("stdout", b"A"), ("stderr", b"B\n"),
+                                  ("stdout", b"C\n")])
+
+    def test_display_word_limit_merges_cross_stream_word_without_separator(self):
+        stdout, stderr = object(), object()
+        merged = bytearray()
+        writes = []
+
+        class Sink:
+            def __init__(self, name):
+                self.name = name
+
+            def write(self, data):
+                data = bytes(data)
+                writes.append((self.name, data))
+                merged.extend(data)
+
+            def flush(self):
+                pass
+
+        display = output.Display(2, 32768, True)
+        display.sinks = {stdout: Sink("stdout"), stderr: Sink("stderr")}
+        display.write(stdout, b"w " * 1499 + b"a")
+        display.write(stderr, b"b ")
+        display.write(stdout, b"x")
+        display.finish()
+
+        self.assertEqual(display.words, 1500)
+        self.assertEqual(bytes(merged), b"w " * 1499 +
+                         b"ab \n[truncated by mtk]\n")
+        self.assertIn(("stderr", b"b "), writes)
+        self.assertFalse(any(data == b"x" for _, data in writes))
+
+    def test_display_utf8_decoders_remain_per_stream_when_chunks_interleave(self):
+        stdout, stderr = object(), object()
+        merged = bytearray()
+        writes = []
+
+        class Sink:
+            def __init__(self, name):
+                self.name = name
+
+            def write(self, data):
+                data = bytes(data)
+                writes.append((self.name, data))
+                merged.extend(data)
+
+            def flush(self):
+                pass
+
+        display = output.Display(2, 32768, True)
+        display.sinks = {stdout: Sink("stdout"), stderr: Sink("stderr")}
+        display.write(stdout, b"\xc3")
+        display.write(stderr, b"X")
+        display.write(stdout, b"\xa9\n")
+        display.finish()
+
+        self.assertEqual(bytes(merged), "Xé\n".encode())
+        self.assertEqual(writes, [("stderr", b"X"), ("stdout", "é\n".encode())])
+
+    def test_non_tty_output_streams_before_command_exits(self):
+        command = subprocess.Popen([MTK, sys.executable, "-c",
+            "import time; print('READY',flush=True); time.sleep(1); print('DONE',flush=True)"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stderr = b""
+        try:
+            self.assertEqual(command.stdout.readline(), b"READY\n")
+            stdout, stderr = command.communicate(timeout=5)
+            self.assertEqual(command.returncode, 0, stderr)
+            self.assertEqual(stdout, b"DONE\n")
+        finally:
+            if command.poll() is None:
+                command.kill()
+                command.wait(timeout=3)
+            for match in re.findall(rb"(?m)^(/tmp/mtk-[^\r\n]+\.log)\r?$", stderr):
+                Path(os.fsdecode(match)).unlink(missing_ok=True)
+
     def test_large_output_has_default_limits_and_full_log(self):
         result, log = self.run_mtk("import os; os.write(1,b'x\\n'*200000)")
-        self.assertEqual(result.stdout, b"x\n" * 200 + b"[truncated by mtk]\n")
+        self.assertEqual(result.stdout, b"x\n" * 40 + b"x\n" * 40 +
+                         b"[truncated by mtk]\n")
         self.assertEqual(log, b"x\n" * 200000)
 
-    def test_oversized_line_uses_byte_limit(self):
+    def test_oversized_line_uses_character_limit(self):
         result, log = self.run_mtk("print('x'*40000,end='')")
-        self.assertEqual(result.stdout, b"x" * 32768 + b"\n[truncated by mtk]\n")
+        self.assertTrue(result.stdout.startswith(b"x" * 8000 + b"\n[truncated by mtk]"))
+        self.assertIn(b"[truncated by mtk]", result.stdout)
         self.assertEqual(log, b"x" * 40000)
 
     def test_governor_creates_only_one_log_footer(self):
@@ -286,7 +467,7 @@ class OutputTests(unittest.TestCase):
         result, log = self.run_mtk(
             "import os; os.write(2,b'one\\ntwo\\nthree')", ["--max-lines", "2"])
         self.assertEqual(result.returncode, 0)
-        self.assertTrue(result.stderr.startswith(b"one\ntwo\n[truncated by mtk]\n"))
+        self.assertTrue(result.stderr.startswith(b"one\nthree\n[truncated by mtk]\n"))
         path = Path(os.fsdecode(result.stderr.splitlines()[-1]))
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertEqual(log, b"one\ntwo\nthree")

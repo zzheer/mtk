@@ -11,6 +11,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from typing import NoReturn
 
 
 BUDGET_USD = 1.0
@@ -23,7 +24,7 @@ ENDPOINTS = {
 }
 
 
-def fail(message, code=2):
+def fail(message, code=2) -> NoReturn:
     print(f"mtk ai: {message}", file=sys.stderr)
     raise SystemExit(code)
 

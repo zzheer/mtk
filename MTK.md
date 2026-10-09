@@ -3,8 +3,9 @@
 Canonical public guide: <https://raw.githubusercontent.com/zzheer/mtk/refs/heads/preview/MTK.md>.
 
 Prefer Homebrew-installed `mtk`, resolved through PATH, for routine shell and
-terminal commands: `mtk COMMAND ... [resource and display limits]`. Use native handlers for
-Git, ripgrep, GitHub CLI, tests, and builds. Unknown commands execute directly, preserving output and exit status within
+terminal commands: `mtk COMMAND [ARGS] [-- MTK OPTIONS]`. Use native handlers
+for Git, ripgrep, GitHub CLI, tests, and builds. Unknown commands execute
+directly, preserving output and exit status within
 MTK limits; use `mtk just`, `mtk python3`, `mtk fd`, `mtk node`, and `mtk ssh`. Do not substitute a source-checkout wrapper.
 When unavailable or incompatible wrapping, filtered diagnostics, changed exit status, or wrapper
 limits block authorized work, run the underlying command directly. No additional
@@ -94,9 +95,6 @@ mtk log app.log # Deduplicated logs
 mtk curl <url> # Truncate + save full output
 mtk wget <url> # Download, strip progress bars
 mtk summary <cmd> [args...] # Direct argv execution + heuristic summary
-mtk run <cmd> [args...] # Raw argv without RTK summaries; MTK logs/limits remain
-mtk run -c '<script>' # Shell string via sh (cmd on Windows)
-mtk run --shell fish -c '<script>' # Explicit shell for shell-specific syntax
 
 ## Others
 
@@ -120,20 +118,16 @@ mtk session # Show mtk adoption across recent sessions
 
 ## Resource Governance & Limits
 
-Append resource and display limits to the command:
+Put resource and display options after the final `--`:
 
 ```bash
-# Time limit (s, m, h)
-mtk npm test --time-limit 30s
-mtk cargo build --time-limit=5m
-
-# Memory limit (RSS polling every 500ms)
-mtk python3 data_processor.py --memory-limit 2G
-mtk node script.js --mem-limit=500M
-
-# CPU throttling (bundled corrected limiter; children included by default)
-mtk ffmpeg -i input.mp4 output.mp4 --cpu-limit 50%
-mtk python3 script.py --cpu-limit=50 --exclude-children
+# Time, memory, and CPU limits (all disabled by default)
+mtk npm test -- --time 30s
+mtk cargo build -- --time=5m
+mtk bun data_processor.ts -- --memory 2G
+mtk node script.js -- --memory=500M
+mtk ffmpeg -i input.mp4 output.mp4 -- --cpu 50%
+mtk bun script.ts -- --cpu=50 --root-only
 
 # Singleton (terminates previous instance with up to 5 retries)
 mtk --singleton=server_sync ./sync.sh
@@ -143,37 +137,34 @@ mtk --singleton npm run dev  # Auto-derives lock key from command
 mtk --singleton-wait=deploy ./deploy.sh
 ```
 
-Only a final contiguous MTK flag suffix is extracted: `--time-limit`,
-`--memory-limit` (alias `--mem-limit`), `--cpu-limit`, `--exclude-children`,
-`--max-lines`, `--max-bytes`, and `--no-truncate`. Value flags accept both
-separate values and `=VALUE`. Legacy prefix flags still work.
-Duplicate limits use the last value, and suffix values override prefix values:
+Put MTK options after the final `--`. Value options accept `--flag VALUE` or
+`--flag=VALUE`; repeated values use the last occurrence. Output controls and
+singleton flags can also appear in the MTK block. Earlier `--` separators remain
+child arguments; the final delimiter starts MTK options:
 
 ```bash
-mtk --time-limit 60s cargo build --time-limit 30s # MTK uses 30s
+mtk bun script.ts --child-option -- --time 30s
+mtk tool -- --child-option -- --max-lines 100
 ```
 
-A standalone `--` anywhere after `COMMAND` disables suffix extraction for that
-invocation and preserves the wrapped arguments:
+`--time`, `--memory`, and `--cpu` are disabled by default. Timeouts and memory
+limits always cover descendants. CPU limits include descendants unless
+`--root-only` is set; that option is false by default. Output defaults are 80
+lines, 1500 words, 8000 Unicode characters, and 32 KiB across both streams, with
+truncation enabled and global configuration overrides. `--no-truncate` disables
+all display caps.
 
 ```bash
-mtk python3 script.py -- --time-limit 30s # Passed through to the command
-```
-
-Keep trailing resource and display flags together at the end. Singleton flags
-remain prefix-only:
-
-```bash
-mtk python3 worker.py --time-limit 60s --max-lines 100 --cpu-limit 50
+mtk bun worker.ts -- --time 60s --max-lines 100 --cpu 50
 ```
 
 CPU limits include the full descendant-tree depth on Darwin by default.
-`--exclude-children` limits only the root process; timeout and memory cleanup
-still cover the workload and its descendants.
+`--root-only` limits CPU only; timeout and memory cleanup still cover the
+workload and its descendants.
 
 Avoid nesting CPU-limited MTK commands: independent stop/resume controllers
 can interfere with each other. When running the governor test suite, apply
-`--exclude-children` to the outer test runner so each regression owns its CPU
+`--root-only` to the outer test runner so each regression owns its CPU
 controller; retain the outer timeout and memory limits.
 
 ## Device-local jobs
@@ -197,42 +188,31 @@ tracked after the root exits. Rapid detach/reparent between samples, or children
 born after observers exit, can escape observation; this is not an absolute
 guarantee of tracking every detached process.
 
-## Conversion & MarkItDown
-
-mtk markitdown document.pdf # Convert PDF/Word/Excel/Audio to Markdown (via uvx/binary)
-mtk markitdown document.docx -o doc.md # Save converted markdown
-mmd presentation.pptx # Alias for `mtk markitdown`
-
 ## Assistant Hooks
 
 mtk hook codex # Configure global Codex CLI PreToolUse hook (~/.codex/hooks.json)
 mtk hook codex --local # Configure project-local Codex hook (.codex/hooks.json)
 
-## Web Search & Resilient Fetch
+## Resilient Fetch
 
-mtk search-web "rust language" # DuckDuckGo web search (free, 0 tokens, native binary)
-mtk search-web "query" --limit 10 # Up to 50 results (default 5)
-mtk search-web "query" --json # Output raw search-cli/v1 JSON envelope
-mtk fetch https://example.com # Stealth browser fetch (curl-cffi) -> Markdown (markitdown)
+mtk fetch https://example.com # Fetch page content as Markdown
 mtk fetch https://news.ycombinator.com -o hn.md # Save markdown directly to file
 
 ## Dependency Architecture & Health
 
-mtk doctor # Audits all runtimes, proxies, limiters, and scrapers
-just install-search # Installs independent zzheer/tap/duckduckgo-tools
+mtk doctor # Audits runtimes, limiters, and scrapers
 just test # Offline, bounded regression tests
+just validate # Sequential unit tests and pinned Python helper typechecks (requires uvx)
 just audit # Audits Homebrew formula locally
 
 - Homebrew formula/dependency installation is defined by `packaging/manifest.json`.
-- Search uses installed `duckduckgo-tools`; no source checkout or Instant Answer fallback.
 - Corrected GPL limiter source and notices ship with MTK; Homebrew builds private `mtk-cpulimit`.
-- MarkItDown runs on demand through installed binary or `uvx`.
 
 ## Output and logs
 
 ```bash
-mtk git diff --max-lines 500 --max-bytes 128KiB
-mtk python3 script.py --no-truncate
+mtk git diff -- --max-lines 500 --max-bytes 128KiB
+mtk bun script.ts -- --no-truncate
 ```
 
 Display settings load from `~/.config/mtk/config.json`. When `XDG_CONFIG_HOME` is
@@ -241,8 +221,8 @@ JSON file to change defaults globally:
 
 ```json
 {
-  "max_lines": 500,
-  "max_bytes": "128KiB",
+  "max_lines": 80,
+  "max_bytes": "32KiB",
   "truncate": true
 }
 ```
@@ -250,36 +230,41 @@ JSON file to change defaults globally:
 `max_lines` accepts a positive integer. `max_bytes` accepts a positive integer
 number of bytes or a size string such as `"32KiB"` or `"128KiB"`. `truncate`
 accepts a JSON boolean; `false` disables display clipping. Keys are optional.
-A missing config file uses 200 lines, 32 KiB, and truncation enabled. Invalid
+A missing config file uses 80 lines, 32 KiB, and truncation enabled. Invalid
 JSON or invalid settings exit nonzero before the wrapped command starts.
 Config must be a regular JSON file: FIFOs, devices, and other nonregular files
 are rejected before command execution; symlinks to regular files are allowed.
 CLI flags override the corresponding config settings: `--max-lines`,
-`--max-bytes`, and `--no-truncate`. Resource
-limits remain separate CLI flags; this config controls output display only.
+`--max-bytes`, and `--no-truncate`. Raising line or byte limits does not remove
+the fixed 1500-word and 8000-character caps; `--no-truncate` disables every
+display cap. Resource limits remain separate CLI flags; this config controls
+output display only.
 
-Defaults: 200 lines / 32 KiB per stream. Each MTK clipping region has exact
-`[truncated by mtk]`. Unique private `/tmp/mtk-*.log` contains complete wrapped
+Defaults: 80 lines, 1500 words, 8000 Unicode characters, and 32 KiB shared
+across stdout and stderr. Clipped output keeps up to a 40-line head and 40-line
+tail; the tail may be absent when the head consumes the shared word, character,
+or byte budget. Line and word boundaries are shared across streams, with no
+separator added when output switches streams. UTF-8 decoding stays per stream;
+retained bytes go to their original stream. One `[truncated by mtk]` marker
+follows omitted output.
+Unique private `/tmp/mtk-*.log` contains complete wrapped
 output only; stdout/stderr bytes follow observed arrival order. The final
 filepath is on stderr. The log contains bytes after RTK processing: content RTK
 removed cannot be recovered. `--no-truncate` still logs output and prints the
 filepath. Display limits do not cap log size; manage retention and storage
 separately.
 
-Codex resolves Homebrew `/opt/homebrew/bin/mtk` through PATH. Existing hooks
-need not be enabled; verify `command -v mtk` and `mtk --help` from its shell.
+Codex resolves Homebrew `/opt/homebrew/bin/mtk` through PATH. Optional
+`mtk hook codex` setup migrates the legacy RTK hook to a private MTK adapter;
+review and trust it in Codex's `/hooks` screen. Supported commands, including
+already-prefixed RTK commands, are rewritten through MTK. Existing MTK commands
+are unchanged. Verify `command -v mtk` and `mtk --help` from its shell.
 
 ## Advanced exact output
 
-Use `mtk run COMMAND ...` to bypass a native handler's RTK summary while
-retaining MTK logging and resource limits. For complete displayed bytes:
-
-```bash
-mtk run git diff --no-truncate --time-limit 30s
-```
-
-The stderr log filepath footer still prints. `mp` aliases `mtk`; `mr` aliases
-`mtk run`.
+Commands handled directly by RTK may summarize output. Use an external
+command directly when its full output is required. The stderr log filepath
+footer still prints. `mp` and `mr` alias `mtk`.
 
 ## Preferences
 
@@ -288,9 +273,16 @@ Prefer `mtk fd` over `find`. Prefer `mtk rg` over `grep`.
 Any unknown command not recognized as an internal mtk or native rtk subcommand
 executes directly with its output and exit status preserved within MTK limits.
 
+For shell orchestration, use `mtk zx ./scripts/task.mjs`; this runs zx with its
+own runtime. Use zx's tagged command templates with interpolated values instead
+of building shell command strings by concatenation. Keep MTK as the outer
+command so the script and its child processes remain within that MTK
+invocation's output and workload limits. Use `mtk bun` for ad hoc scripts and
+file processing that do not need shell orchestration.
+
 # Aliases
 
-mr = mtk run
+mr = mtk
 mpf = mtk fd
 mrg = mtk rg
 md = mtk docker
@@ -306,6 +298,5 @@ mpe = mtk pnpm exec
 mnpm = mtk npm
 mnpx = mtk npx
 mssh = mtk ssh
-mmd = mtk markitdown
 
 mpp = mtk python3 # Standalone Python shortcut

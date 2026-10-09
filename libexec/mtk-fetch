@@ -26,7 +26,7 @@ Usage: mtk fetch <url> [OPTIONS]
 
 Fetch web page content and convert to clean Markdown.
 Uses browser impersonation (curl-cffi) to bypass anti-bot WAFs,
-converting to Markdown via markitdown / trafilatura, with cloud fallback.
+converting to Markdown, with cloud fallback.
 
 Options:
   -o, --output <FILE>   Save markdown output to file instead of stdout

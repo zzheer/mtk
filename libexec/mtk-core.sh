@@ -7,7 +7,7 @@ is_rtk_subcommand() {
     ls|tree|read|smart|git|gh|glab|aws|psql|pnpm|err|test|json|deps|env|find|diff|log|\
     dotnet|docker|kubectl|oc|summary|grep|rg|ast-grep|init|wget|wc|gain|cc-economics|\
     config|jest|vitest|ctest|prisma|tsc|next|lint|prettier|format|playwright|cargo|npm|\
-    npx|bun|bunx|curl|discover|session|telemetry|learn|run|recall|pipe|trust|\
+    npx|bun|bunx|curl|discover|session|telemetry|learn|run|proxy|recall|pipe|trust|\
     untrust|verify|ruff|sqlfluff|pytest|mypy|php|phpunit|phpstan|pest|paratest|ecs|pint|\
     phpt|rake|rubocop|rspec|pip|uv|deno|go|sbt|gt|golangci-lint|gradlew|mvn|mvnd|hook-audit|\
     rewrite|hook|help|-h|--help|-v|-vv|-vvv|--verbose|--ultra-compact|--skip-env|--version|-V)
@@ -23,21 +23,6 @@ mtk_core_run() {
   if [[ $# -eq 0 ]]; then
     echo "mtk: missing command" >&2
     echo "Try 'mtk --help' for available commands." >&2
-    return 2
-  fi
-
-  local subcommand="" help_target="" arg
-  for arg in "$@"; do
-    [[ "$arg" == -* ]] && continue
-    if [[ -z "$subcommand" ]]; then
-      subcommand="$arg"
-    else
-      help_target="$arg"
-      break
-    fi
-  done
-  if [[ "$subcommand" == "proxy" || ( "$subcommand" == "help" && "$help_target" == "proxy" ) ]]; then
-    echo "mtk: proxy was removed; use 'mtk COMMAND ...' or 'mtk run COMMAND ...'." >&2
     return 2
   fi
 
@@ -63,7 +48,7 @@ mtk_core_run() {
     done
 
     if [[ $has_help -eq 1 ]]; then
-      command rtk "$@" | sed -e '/^[[:space:]]*proxy[[:space:]]/d' -e 's/rtk/mtk/g' -e 's/RTK/MTK/g'
+      command rtk "$@" | sed -e '/^[[:space:]]*proxy[[:space:]]/d' -e '/^[[:space:]]*run[[:space:]]/d' -e 's/CLI proxy/CLI wrapper/g' -e 's/proxy to native/native/g' -e 's/rtk/mtk/g' -e 's/RTK/MTK/g'
     else
       command rtk "$@"
     fi

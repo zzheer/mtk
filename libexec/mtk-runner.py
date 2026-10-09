@@ -341,7 +341,7 @@ def main() -> None:
 
     signal.signal(signal.SIGWINCH, lambda sig, frame: signal_workload(sig))
 
-    if cpu_limit_pct:
+    if cpu_limit_pct and cpulimit_bin:
         cpu_args = [cpulimit_bin, "-l", str(cpu_limit_pct), "-p", str(child.pid)]
         if not args.exclude_children:
             cpu_args.append("-i")

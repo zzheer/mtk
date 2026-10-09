@@ -11,7 +11,7 @@
     "ripgrep",
     "rtk",
     "uv",
-    "zzheer/tap/duckduckgo-tools"
+    "zx"
   ],
   "install": {
     "libexec": [
@@ -20,6 +20,7 @@
       "libexec/mtk-core.sh",
       "libexec/mtk-runner.py",
       "libexec/mtk-output.py",
+      "libexec/mtk-codex-hook.py",
       "libexec/mtk-search",
       "libexec/mtk-fetch",
       "libexec/mtk_jobs.py"
