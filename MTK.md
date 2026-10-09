@@ -202,6 +202,7 @@ mtk fetch https://news.ycombinator.com -o hn.md # Save markdown directly to file
 
 mtk doctor # Audits runtimes, limiters, and scrapers
 just test # Offline, bounded regression tests
+just validate # Sequential unit tests and pinned Python helper typechecks (requires uvx)
 just audit # Audits Homebrew formula locally
 
 - Homebrew formula/dependency installation is defined by `packaging/manifest.json`.
@@ -242,7 +243,10 @@ output display only.
 Defaults: 80 lines, 1500 words, 8000 Unicode characters, and 32 KiB shared
 across stdout and stderr. Clipped output keeps up to a 40-line head and 40-line
 tail; the tail may be absent when the head consumes the shared word, character,
-or byte budget. One `[truncated by mtk]` marker follows omitted output.
+or byte budget. Line and word boundaries are shared across streams, with no
+separator added when output switches streams. UTF-8 decoding stays per stream;
+retained bytes go to their original stream. One `[truncated by mtk]` marker
+follows omitted output.
 Unique private `/tmp/mtk-*.log` contains complete wrapped
 output only; stdout/stderr bytes follow observed arrival order. The final
 filepath is on stderr. The log contains bytes after RTK processing: content RTK

@@ -97,6 +97,7 @@ permissions `0600`.
 - Clipped output gets one exact `[truncated by mtk]` marker after its tail.
 - The log retains complete raw wrapped-command output.
 - stdout and stderr share the display budget and are captured in observed arrival order, without labels.
+- Display line and word boundaries are shared across streams; switching streams adds no separator, UTF-8 decoding stays per stream, and retained bytes go to their original stream.
 - The log filepath prints last on stderr, after output drains.
 - Normal exit codes and shell-compatible signal statuses are preserved.
 - Capture failures are reported explicitly.
@@ -271,10 +272,12 @@ JSON bypasses output capture; rewritten workloads retain MTK's caps and logs.
 Run project checks locally:
 
 ```bash
-just test
+mtk just validate
 ```
 
-Tests use deterministic fixtures, mocked executables, and isolated Codex homes.
+Validation uses Python 3.12 and runs the unit suite followed by all Python helper
+typechecks using the pinned ty checker through `uvx`. Tests use deterministic fixtures, mocked
+executables, and isolated Codex homes.
 Governor checks also exercise real child processes. Project policy requires
 CI, builds, tests, and automated reviews to run exclusively on owned devices:
 no GitHub Actions, hosted reviews, or additional paid GitHub automation.

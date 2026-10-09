@@ -247,16 +247,23 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(result.stdout, b"one\nthree\n[truncated by mtk]\n")
         self.assertEqual(log, b"one\ntwo\nthree\n")
 
-    def test_default_line_limit_keeps_first_and_last_forty_lines(self):
-        result, log = self.run_mtk(
-            "print('\\n'.join(f'line-{i}' for i in range(100)))")
-        self.assertEqual(result.returncode, 0)
-        displayed = [line for line in result.stdout.splitlines()
-                     if line != b"[truncated by mtk]"]
-        self.assertEqual(displayed, [f"line-{i}".encode() for i in range(40)] +
-                         [f"line-{i}".encode() for i in range(60, 100)])
-        self.assertIn(b"[truncated by mtk]", result.stdout)
-        self.assertEqual(log, b"".join(f"line-{i}\n".encode() for i in range(100)))
+    def test_default_line_limit_boundaries(self):
+        for count in (40, 41, 80, 81):
+            with self.subTest(count=count):
+                result, log = self.run_mtk(
+                    "print('\\n'.join(f'line-{i}' for i in range(%d)))" % count)
+                self.assertEqual(result.returncode, 0)
+                expected = ([f"line-{i}".encode() for i in range(count)]
+                            if count <= 80 else
+                            [f"line-{i}".encode() for i in range(40)] +
+                            [f"line-{i}".encode() for i in range(41, 81)])
+                displayed = [line for line in result.stdout.splitlines()
+                             if line != b"[truncated by mtk]"]
+                self.assertEqual(displayed, expected)
+                self.assertEqual(b"[truncated by mtk]" in result.stdout,
+                                 count == 81)
+                self.assertEqual(log, b"".join(
+                    f"line-{i}\n".encode() for i in range(count)))
 
     def test_byte_limit_preserves_utf8(self):
         result, log = self.run_mtk("print('ééé',end='')", ["--max-bytes", "5"])
@@ -304,13 +311,16 @@ class OutputTests(unittest.TestCase):
         self.assertIn(b"b" * 9, log)
 
     def test_character_cap_counts_unicode_characters_and_preserves_utf8(self):
-        result, log = self.run_mtk("print('é'*9000,end='')")
-        self.assertEqual(result.returncode, 0)
-        displayed = result.stdout.decode("utf-8")
-        payload = displayed.replace("[truncated by mtk]\n", "").rstrip("\n")
-        self.assertLessEqual(len(payload), 8000)
-        self.assertEqual(payload, "é" * 8000)
-        self.assertEqual(log.decode("utf-8"), "é" * 9000)
+        for count in (8000, 8001):
+            with self.subTest(count=count):
+                result, log = self.run_mtk("print('é'*%d,end='')" % count)
+                self.assertEqual(result.returncode, 0)
+                displayed = result.stdout.decode("utf-8")
+                marker = "\n[truncated by mtk]\n"
+                self.assertEqual(marker in displayed, count == 8001)
+                payload = displayed.replace(marker, "")
+                self.assertEqual(payload, "é" * min(count, 8000))
+                self.assertEqual(log.decode("utf-8"), "é" * count)
 
     def test_newline_counts_toward_global_character_cap(self):
         result, log = self.run_mtk("print('x'*7999+'\\nZ',end='')")
@@ -318,14 +328,105 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(log, b"x" * 7999 + b"\nZ")
 
     def test_word_cap_and_complete_log(self):
-        result, log = self.run_mtk("print(' '.join(['word']*1600))")
-        self.assertEqual(result.returncode, 0)
-        stderr_display = re.sub(rb"(?m)^/tmp/mtk-[^\r\n]+\.log\r?\n?$", b"",
-                                result.stderr)
-        displayed = (result.stdout + b" " + stderr_display).replace(
-            b"[truncated by mtk]\n", b"")
-        self.assertLessEqual(len(displayed.split()), 1500)
-        self.assertEqual(log, b" ".join([b"word"] * 1600) + b"\n")
+        for count in (1500, 1501):
+            with self.subTest(count=count):
+                result, log = self.run_mtk(
+                    "print(' '.join(['word']*%d))" % count)
+                self.assertEqual(result.returncode, 0)
+                stderr_display = re.sub(
+                    rb"(?m)^/tmp/mtk-[^\r\n]+\.log\r?\n?$", b"", result.stderr)
+                displayed = (result.stdout + b" " + stderr_display).replace(
+                    b"[truncated by mtk]\n", b"")
+                self.assertEqual(len(displayed.split()), min(count, 1500))
+                self.assertEqual(b"[truncated by mtk]" in result.stdout,
+                                 count == 1501)
+                self.assertEqual(log, b" ".join([b"word"] * count) + b"\n")
+
+    def test_display_merges_interleaved_partial_lines_without_stream_separator(self):
+        stdout, stderr = object(), object()
+        merged = bytearray()
+        writes = []
+
+        class Sink:
+            def __init__(self, name):
+                self.name = name
+
+            def write(self, data):
+                data = bytes(data)
+                writes.append((self.name, data))
+                merged.extend(data)
+
+            def flush(self):
+                pass
+
+        display = output.Display(2, 32768, True)
+        display.sinks = {stdout: Sink("stdout"), stderr: Sink("stderr")}
+        display.write(stdout, b"A")
+        display.write(stderr, b"B\n")
+        display.write(stdout, b"C\n")
+        display.finish()
+
+        self.assertEqual(bytes(merged), b"AB\nC\n")
+        self.assertEqual(display.lines, 2)
+        self.assertEqual(writes, [("stdout", b"A"), ("stderr", b"B\n"),
+                                  ("stdout", b"C\n")])
+
+    def test_display_word_limit_merges_cross_stream_word_without_separator(self):
+        stdout, stderr = object(), object()
+        merged = bytearray()
+        writes = []
+
+        class Sink:
+            def __init__(self, name):
+                self.name = name
+
+            def write(self, data):
+                data = bytes(data)
+                writes.append((self.name, data))
+                merged.extend(data)
+
+            def flush(self):
+                pass
+
+        display = output.Display(2, 32768, True)
+        display.sinks = {stdout: Sink("stdout"), stderr: Sink("stderr")}
+        display.write(stdout, b"w " * 1499 + b"a")
+        display.write(stderr, b"b ")
+        display.write(stdout, b"x")
+        display.finish()
+
+        self.assertEqual(display.words, 1500)
+        self.assertEqual(bytes(merged), b"w " * 1499 +
+                         b"ab \n[truncated by mtk]\n")
+        self.assertIn(("stderr", b"b "), writes)
+        self.assertFalse(any(data == b"x" for _, data in writes))
+
+    def test_display_utf8_decoders_remain_per_stream_when_chunks_interleave(self):
+        stdout, stderr = object(), object()
+        merged = bytearray()
+        writes = []
+
+        class Sink:
+            def __init__(self, name):
+                self.name = name
+
+            def write(self, data):
+                data = bytes(data)
+                writes.append((self.name, data))
+                merged.extend(data)
+
+            def flush(self):
+                pass
+
+        display = output.Display(2, 32768, True)
+        display.sinks = {stdout: Sink("stdout"), stderr: Sink("stderr")}
+        display.write(stdout, b"\xc3")
+        display.write(stderr, b"X")
+        display.write(stdout, b"\xa9\n")
+        display.finish()
+
+        self.assertEqual(bytes(merged), "Xé\n".encode())
+        self.assertEqual(writes, [("stderr", b"X"), ("stdout", "é\n".encode())])
 
     def test_non_tty_output_streams_before_command_exits(self):
         command = subprocess.Popen([MTK, sys.executable, "-c",

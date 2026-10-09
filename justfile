@@ -15,7 +15,16 @@ install-search:
 # Check syntax and run test suites locally
 test:
     bash -n bin/mtk bin/mpp libexec/mtk-core.sh libexec/mtk-search libexec/mtk-fetch share/mtk/mtk-aliases.sh scripts/release.sh
-    python3 -m unittest discover -s tests -p 'test_*.py'
+    python3.12 -m unittest discover -s tests -p 'test_*.py'
+
+# Check every Python helper with a pinned checker
+typecheck:
+    uvx --from ty==0.0.85 ty check --python "$(command -v python3.12)" --output-format concise libexec libexec/mtk-ai libexec/mtk-media scripts/package.py
+
+# Validate sequentially; fail before starting the next check
+validate:
+    just test
+    just typecheck
 
 # Audit Homebrew formula locally
 audit:

@@ -12,10 +12,11 @@ import sys
 import tempfile
 import time
 import uuid
+from typing import ClassVar
 
 
 class _BSDInfo(ctypes.Structure):
-    _fields_ = [(name, ctypes.c_uint32) for name in (
+    _fields_: ClassVar[list[tuple[str, type]]] = [(name, ctypes.c_uint32) for name in (
         'flags', 'status', 'xstatus', 'pid', 'ppid', 'uid', 'gid', 'ruid',
         'rgid', 'svuid', 'svgid', 'rfu')]
     _fields_ += [('comm', ctypes.c_char * 16), ('name', ctypes.c_char * 32)]

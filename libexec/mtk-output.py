@@ -19,15 +19,18 @@ import termios
 import tty
 
 import importlib.util
+from importlib.abc import Loader
+from importlib.machinery import ModuleSpec
 from pathlib import Path
+from typing import BinaryIO, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mtk_jobs import Tracker, prepare_state
 
 
-runner_spec = importlib.util.spec_from_file_location("mtk_runner_sizes", Path(__file__).with_name("mtk-runner.py"))
+runner_spec = cast(ModuleSpec, importlib.util.spec_from_file_location("mtk_runner_sizes", Path(__file__).with_name("mtk-runner.py")))
 runner_sizes = importlib.util.module_from_spec(runner_spec)
-runner_spec.loader.exec_module(runner_sizes)
+cast(Loader, runner_spec.loader).exec_module(runner_sizes)
 parse_bytes = runner_sizes.parse_bytes
 MARKER = b"[truncated by mtk]\n"
 RESOURCE_VALUE_FLAGS = {"--time-limit", "--memory-limit", "--mem-limit", "--cpu-limit"}
@@ -316,7 +319,7 @@ def execute(command, log, max_lines, max_bytes, truncate):
     tracking_failed = False
     pending_signal = None
     stop_deadline = None
-    termination_signal = None
+    termination_signal = 0
     forced_status = None
     status = None
     display = Display(max_lines, max_bytes, truncate)
@@ -342,8 +345,8 @@ def execute(command, log, max_lines, max_bytes, truncate):
     else:
         child = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         pid = child.pid
-        selector.register(child.stdout, selectors.EVENT_READ, sys.stdout.buffer)
-        selector.register(child.stderr, selectors.EVENT_READ, sys.stderr.buffer)
+        selector.register(cast(BinaryIO, child.stdout), selectors.EVENT_READ, sys.stdout.buffer)
+        selector.register(cast(BinaryIO, child.stderr), selectors.EVENT_READ, sys.stderr.buffer)
 
     def forward(sig, frame):
         nonlocal pending_signal
@@ -399,7 +402,7 @@ def execute(command, log, max_lines, max_bytes, truncate):
                         raise
                 if key.data is None:
                     if data:
-                        os.write(master, data)
+                        os.write(cast(int, master), data)
                     else:
                         selector.unregister(key.fileobj)
                 elif data:
@@ -453,8 +456,8 @@ def execute(command, log, max_lines, max_bytes, truncate):
             if master is not None:
                 os.close(master)
             if child:
-                child.stdout.close()
-                child.stderr.close()
+                cast(BinaryIO, child.stdout).close()
+                cast(BinaryIO, child.stderr).close()
 
 
 def main():
